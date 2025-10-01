@@ -35,25 +35,50 @@ pub enum ParseError {
         expected: String, 
         found: String, 
         line: usize, 
-        column: usize 
+        column: usize,
+        context: Option<String>,
     },
     UnexpectedEof { 
-        expected: String 
+        expected: String,
+        context: Option<String>,
     },
     InvalidSpecialForm { 
         form: String, 
         reason: String, 
         line: usize, 
-        column: usize 
+        column: usize,
+        suggestion: Option<String>,
     },
     UnmatchedParenthesis { 
         line: usize, 
-        column: usize 
+        column: usize,
+        paren_type: String,
     },
     InvalidBinding { 
         reason: String, 
         line: usize, 
-        column: usize 
+        column: usize,
+        suggestion: Option<String>,
+    },
+    TooManyArguments {
+        form: String,
+        expected: usize,
+        found: usize,
+        line: usize,
+        column: usize,
+    },
+    TooFewArguments {
+        form: String,
+        expected: usize,
+        found: usize,
+        line: usize,
+        column: usize,
+    },
+    InvalidSyntax {
+        message: String,
+        line: usize,
+        column: usize,
+        suggestion: Option<String>,
     },
 }
 
@@ -82,20 +107,51 @@ impl fmt::Display for LexError {
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseError::UnexpectedToken { expected, found, line, column } => {
-                write!(f, "Expected {} but found '{}' at line {}, column {}", expected, found, line, column)
+            ParseError::UnexpectedToken { expected, found, line, column, context } => {
+                write!(f, "Expected {} but found '{}' at line {}, column {}", expected, found, line, column)?;
+                if let Some(ctx) = context {
+                    write!(f, " (in {})", ctx)?;
+                }
+                Ok(())
             }
-            ParseError::UnexpectedEof { expected } => {
-                write!(f, "Unexpected end of file, expected {}", expected)
+            ParseError::UnexpectedEof { expected, context } => {
+                write!(f, "Unexpected end of file, expected {}", expected)?;
+                if let Some(ctx) = context {
+                    write!(f, " (in {})", ctx)?;
+                }
+                Ok(())
             }
-            ParseError::InvalidSpecialForm { form, reason, line, column } => {
-                write!(f, "Invalid {} form: {} at line {}, column {}", form, reason, line, column)
+            ParseError::InvalidSpecialForm { form, reason, line, column, suggestion } => {
+                write!(f, "Invalid {} form: {} at line {}, column {}", form, reason, line, column)?;
+                if let Some(hint) = suggestion {
+                    write!(f, "\n  Suggestion: {}", hint)?;
+                }
+                Ok(())
             }
-            ParseError::UnmatchedParenthesis { line, column } => {
-                write!(f, "Unmatched parenthesis at line {}, column {}", line, column)
+            ParseError::UnmatchedParenthesis { line, column, paren_type } => {
+                write!(f, "Unmatched {} at line {}, column {}", paren_type, line, column)
             }
-            ParseError::InvalidBinding { reason, line, column } => {
-                write!(f, "Invalid binding: {} at line {}, column {}", reason, line, column)
+            ParseError::InvalidBinding { reason, line, column, suggestion } => {
+                write!(f, "Invalid binding: {} at line {}, column {}", reason, line, column)?;
+                if let Some(hint) = suggestion {
+                    write!(f, "\n  Suggestion: {}", hint)?;
+                }
+                Ok(())
+            }
+            ParseError::TooManyArguments { form, expected, found, line, column } => {
+                write!(f, "Too many arguments for {}: expected {}, found {} at line {}, column {}", 
+                       form, expected, found, line, column)
+            }
+            ParseError::TooFewArguments { form, expected, found, line, column } => {
+                write!(f, "Too few arguments for {}: expected {}, found {} at line {}, column {}", 
+                       form, expected, found, line, column)
+            }
+            ParseError::InvalidSyntax { message, line, column, suggestion } => {
+                write!(f, "Syntax error: {} at line {}, column {}", message, line, column)?;
+                if let Some(hint) = suggestion {
+                    write!(f, "\n  Suggestion: {}", hint)?;
+                }
+                Ok(())
             }
         }
     }
@@ -103,3 +159,30 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for LexError {}
 impl std::error::Error for ParseError {}
+
+impl ParseError {
+    /// Create an UnexpectedToken error with optional context
+    pub fn unexpected_token(expected: String, found: String, line: usize, column: usize, context: Option<String>) -> Self {
+        ParseError::UnexpectedToken { expected, found, line, column, context }
+    }
+
+    /// Create an UnexpectedEof error with optional context
+    pub fn unexpected_eof(expected: String, context: Option<String>) -> Self {
+        ParseError::UnexpectedEof { expected, context }
+    }
+
+    /// Create an InvalidSpecialForm error with optional suggestion
+    pub fn invalid_special_form(form: String, reason: String, line: usize, column: usize, suggestion: Option<String>) -> Self {
+        ParseError::InvalidSpecialForm { form, reason, line, column, suggestion }
+    }
+
+    /// Create an UnmatchedParenthesis error
+    pub fn unmatched_parenthesis(line: usize, column: usize, paren_type: String) -> Self {
+        ParseError::UnmatchedParenthesis { line, column, paren_type }
+    }
+
+    /// Create an InvalidBinding error with optional suggestion
+    pub fn invalid_binding(reason: String, line: usize, column: usize, suggestion: Option<String>) -> Self {
+        ParseError::InvalidBinding { reason, line, column, suggestion }
+    }
+}
