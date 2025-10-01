@@ -321,6 +321,19 @@ impl VM {
                     self.pop()?;
                 }
 
+                OpCode::OP_GET_UPVALUE => {
+                    let upvalue_index = self.read_byte()? as usize;
+                    let value = self.get_upvalue(upvalue_index)?;
+                    self.push(value)?;
+                }
+
+                OpCode::OP_SET_UPVALUE => {
+                    let upvalue_index = self.read_byte()? as usize;
+                    let value = self.peek(0)?.clone(); // Don't pop yet in case of error
+                    self.set_upvalue(upvalue_index, value)?;
+                    // Value stays on stack for assignment expressions
+                }
+
                 OpCode::OP_EQUAL => {
                     let b = self.pop()?;
                     let a = self.pop()?;
@@ -372,9 +385,83 @@ impl VM {
                     self.call_value(arg_count)?;
                 }
 
+                OpCode::OP_CLOSE_UPVALUE => {
+                    let slot = self.read_byte()? as usize;
+                    let current_frame = self.current_frame()
+                        .ok_or_else(|| RuntimeError::InvalidOperation("No active call frame".to_string()))?;
+                    let absolute_slot = current_frame.slots + slot;
+                    self.close_upvalues(absolute_slot);
+                }
+
+                OpCode::OP_CLOSURE => {
+                    let constant_index = self.read_byte()? as usize;
+                    let function_value = self.read_constant(constant_index)?;
+                    
+                    // Extract the function from the constant
+                    let function = match &function_value {
+                        Value::Object(obj) => {
+                            if let Ok(obj_ref) = obj.try_borrow() {
+                                if let Object::Function(func) = &*obj_ref {
+                                    Rc::new(func.clone())
+                                } else {
+                                    return Err(RuntimeError::TypeError {
+                                        expected: "function".to_string(),
+                                        got: self.type_name(&function_value),
+                                    });
+                                }
+                            } else {
+                                return Err(RuntimeError::InvalidOperation("Cannot borrow function object".to_string()));
+                            }
+                        }
+                        _ => {
+                            return Err(RuntimeError::TypeError {
+                                expected: "function".to_string(),
+                                got: self.type_name(&function_value),
+                            });
+                        }
+                    };
+
+                    // Create the closure
+                    let mut closure = Closure::new(function.clone());
+
+                    // Read upvalue metadata and capture upvalues
+                    for _ in 0..function.upvalue_count {
+                        let is_local = self.read_byte()? != 0;
+                        let index = self.read_byte()? as usize;
+
+                        let upvalue = if is_local {
+                            // Capture a local variable from the current frame
+                            let current_frame = self.current_frame()
+                                .ok_or_else(|| RuntimeError::InvalidOperation("No active call frame".to_string()))?;
+                            let stack_slot = current_frame.slots + index;
+                            self.capture_upvalue(stack_slot)
+                        } else {
+                            // Capture an upvalue from the current closure
+                            let current_frame = self.current_frame()
+                                .ok_or_else(|| RuntimeError::InvalidOperation("No active call frame".to_string()))?;
+                            if index < current_frame.closure.upvalues.len() {
+                                current_frame.closure.upvalues[index].clone()
+                            } else {
+                                return Err(RuntimeError::InvalidOperation(
+                                    format!("Upvalue index {} out of bounds", index)
+                                ));
+                            }
+                        };
+
+                        closure.upvalues.push(upvalue);
+                    }
+
+                    // Push the closure onto the stack
+                    let closure_value = Value::closure(closure);
+                    self.push(closure_value)?;
+                }
+
                 OpCode::OP_RETURN => {
                     let result = self.pop()?;
                     let frame = self.pop_frame()?;
+                    
+                    // Close any upvalues that are leaving scope
+                    self.close_upvalues(frame.slots);
                     
                     if self.frame_count == 0 {
                         // End of program
@@ -657,6 +744,148 @@ impl VM {
         Ok(())
     }
 
+    // Upvalue management methods
+
+    /// Capture an upvalue for the given stack slot
+    /// Returns an existing upvalue if one already exists for this slot
+    pub fn capture_upvalue(&mut self, stack_slot: usize) -> Rc<RefCell<crate::object::Upvalue>> {
+        // Look for an existing upvalue for this stack slot
+        for upvalue in &self.open_upvalues {
+            if let Ok(upvalue_ref) = upvalue.try_borrow() {
+                if let crate::object::UpvalueLocation::Stack(slot) = upvalue_ref.location {
+                    if slot == stack_slot {
+                        return upvalue.clone();
+                    }
+                }
+            }
+        }
+
+        // Create a new upvalue if none exists
+        let new_upvalue = Rc::new(RefCell::new(crate::object::Upvalue::new_open(stack_slot)));
+        
+        // Insert the upvalue in the correct position (sorted by stack address)
+        let mut insert_index = 0;
+        for (i, existing_upvalue) in self.open_upvalues.iter().enumerate() {
+            if let Ok(existing_ref) = existing_upvalue.try_borrow() {
+                if let crate::object::UpvalueLocation::Stack(existing_slot) = existing_ref.location {
+                    if existing_slot > stack_slot {
+                        break;
+                    }
+                    insert_index = i + 1;
+                }
+            }
+        }
+        
+        self.open_upvalues.insert(insert_index, new_upvalue.clone());
+        new_upvalue
+    }
+
+    /// Close upvalues that are at or above the given stack slot
+    /// This is called when variables leave scope
+    pub fn close_upvalues(&mut self, last_slot: usize) {
+        let mut i = 0;
+        while i < self.open_upvalues.len() {
+            let should_close = {
+                if let Ok(upvalue_ref) = self.open_upvalues[i].try_borrow() {
+                    if let crate::object::UpvalueLocation::Stack(slot) = upvalue_ref.location {
+                        slot >= last_slot
+                    } else {
+                        false // Already closed
+                    }
+                } else {
+                    false
+                }
+            };
+
+            if should_close {
+                // Get the value from the stack and close the upvalue
+                let upvalue = self.open_upvalues.remove(i);
+                if let Ok(mut upvalue_ref) = upvalue.try_borrow_mut() {
+                    if let crate::object::UpvalueLocation::Stack(slot) = upvalue_ref.location {
+                        if slot < self.stack.len() {
+                            let value = self.stack[slot].clone();
+                            upvalue_ref.close(value);
+                        }
+                    }
+                }
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    /// Get an upvalue by index from the current closure
+    fn get_upvalue(&self, index: usize) -> Result<Value, RuntimeError> {
+        if let Some(frame) = self.current_frame() {
+            if index < frame.closure.upvalues.len() {
+                let upvalue = &frame.closure.upvalues[index];
+                if let Ok(upvalue_ref) = upvalue.try_borrow() {
+                    match &upvalue_ref.location {
+                        crate::object::UpvalueLocation::Stack(slot) => {
+                            // Open upvalue - read from stack
+                            if *slot < self.stack.len() {
+                                Ok(self.stack[*slot].clone())
+                            } else {
+                                Err(RuntimeError::InvalidOperation(
+                                    format!("Upvalue stack slot {} out of bounds", slot)
+                                ))
+                            }
+                        }
+                        crate::object::UpvalueLocation::Closed(value) => {
+                            // Closed upvalue - return the stored value
+                            Ok(value.clone())
+                        }
+                    }
+                } else {
+                    Err(RuntimeError::InvalidOperation("Cannot borrow upvalue".to_string()))
+                }
+            } else {
+                Err(RuntimeError::InvalidOperation(
+                    format!("Upvalue index {} out of bounds", index)
+                ))
+            }
+        } else {
+            Err(RuntimeError::InvalidOperation("No active call frame".to_string()))
+        }
+    }
+
+    /// Set an upvalue by index in the current closure
+    fn set_upvalue(&mut self, index: usize, value: Value) -> Result<(), RuntimeError> {
+        if let Some(frame) = self.current_frame() {
+            if index < frame.closure.upvalues.len() {
+                let upvalue = frame.closure.upvalues[index].clone();
+                if let Ok(mut upvalue_ref) = upvalue.try_borrow_mut() {
+                    match &mut upvalue_ref.location {
+                        crate::object::UpvalueLocation::Stack(slot) => {
+                            // Open upvalue - write to stack
+                            if *slot < self.stack.len() {
+                                self.stack[*slot] = value;
+                                Ok(())
+                            } else {
+                                Err(RuntimeError::InvalidOperation(
+                                    format!("Upvalue stack slot {} out of bounds", slot)
+                                ))
+                            }
+                        }
+                        crate::object::UpvalueLocation::Closed(stored_value) => {
+                            // Closed upvalue - update the stored value
+                            *stored_value = value;
+                            Ok(())
+                        }
+                    }
+                } else {
+                    Err(RuntimeError::InvalidOperation("Cannot borrow upvalue mutably".to_string()))
+                }
+            } else {
+                Err(RuntimeError::InvalidOperation(
+                    format!("Upvalue index {} out of bounds", index)
+                ))
+            }
+        } else {
+            Err(RuntimeError::InvalidOperation("No active call frame".to_string()))
+        }
+    }
+
     /// Get the type name of a value for error messages
     fn type_name(&self, value: &Value) -> String {
         match value {
@@ -863,6 +1092,412 @@ mod tests {
         
         let result = vm.interpret(&chunk).unwrap();
         assert_eq!(result, Value::Boolean(true));
+    }
+
+    #[test]
+    fn test_upvalue_capture() {
+        let mut vm = VM::new();
+        
+        // Push some values onto the stack
+        vm.push(Value::Number(1.0)).unwrap();
+        vm.push(Value::Number(2.0)).unwrap();
+        vm.push(Value::Number(3.0)).unwrap();
+        
+        // Capture upvalues for different stack slots
+        let upvalue1 = vm.capture_upvalue(0);
+        let _upvalue2 = vm.capture_upvalue(2);
+        let _upvalue3 = vm.capture_upvalue(1);
+        
+        // Check that upvalues are created correctly
+        assert_eq!(vm.open_upvalues.len(), 3);
+        
+        // Capturing the same slot again should return the same upvalue
+        let upvalue1_again = vm.capture_upvalue(0);
+        assert!(Rc::ptr_eq(&upvalue1, &upvalue1_again));
+        assert_eq!(vm.open_upvalues.len(), 3); // No new upvalue created
+        
+        // Check that upvalues are sorted by stack address
+        let slots: Vec<usize> = vm.open_upvalues.iter()
+            .filter_map(|uv| {
+                if let Ok(uv_ref) = uv.try_borrow() {
+                    if let crate::object::UpvalueLocation::Stack(slot) = uv_ref.location {
+                        Some(slot)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(slots, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_upvalue_closing() {
+        let mut vm = VM::new();
+        
+        // Push some values onto the stack
+        vm.push(Value::Number(10.0)).unwrap();
+        vm.push(Value::Number(20.0)).unwrap();
+        vm.push(Value::Number(30.0)).unwrap();
+        
+        // Capture upvalues
+        let upvalue0 = vm.capture_upvalue(0);
+        let upvalue1 = vm.capture_upvalue(1);
+        let upvalue2 = vm.capture_upvalue(2);
+        
+        assert_eq!(vm.open_upvalues.len(), 3);
+        
+        // Close upvalues at slot 1 and above
+        vm.close_upvalues(1);
+        
+        // Only upvalue for slot 0 should remain open
+        assert_eq!(vm.open_upvalues.len(), 1);
+        
+        // Check that upvalue0 is still open
+        if let Ok(uv_ref) = upvalue0.try_borrow() {
+            assert!(matches!(uv_ref.location, crate::object::UpvalueLocation::Stack(0)));
+        }
+        
+        // Check that upvalue1 and upvalue2 are closed with correct values
+        if let Ok(uv_ref) = upvalue1.try_borrow() {
+            assert!(matches!(uv_ref.location, crate::object::UpvalueLocation::Closed(Value::Number(n)) if n == 20.0));
+        }
+        
+        if let Ok(uv_ref) = upvalue2.try_borrow() {
+            assert!(matches!(uv_ref.location, crate::object::UpvalueLocation::Closed(Value::Number(n)) if n == 30.0));
+        }
+    }
+
+    #[test]
+    fn test_closure_creation() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Create a simple function with no upvalues
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction(OpCode::OP_NIL, 1);
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function {
+            name: "test_func".to_string(),
+            arity: 0,
+            chunk: function_chunk,
+            upvalue_count: 0,
+        };
+        
+        // Add the function as a constant
+        let function_value = Value::function(function);
+        chunk.write_constant(function_value, 1).unwrap();
+        
+        // Create a closure from the function
+        chunk.write_instruction_with_byte(OpCode::OP_CLOSURE, 0, 1);
+        // No upvalue metadata since upvalue_count is 0
+        
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk).unwrap();
+        
+        // Result should be a closure
+        assert!(result.is_closure());
+    }
+
+    #[test]
+    fn test_closure_with_upvalues() {
+        let mut vm = VM::new();
+        
+        // Manually set up the VM state to simulate having a local variable
+        vm.push(Value::Number(42.0)).unwrap(); // This will be at stack slot 0
+        
+        // Create a function that captures one upvalue
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction(OpCode::OP_NIL, 1);
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function {
+            name: "test_func".to_string(),
+            arity: 0,
+            chunk: function_chunk,
+            upvalue_count: 1,
+        };
+        
+        // Create a main function and closure to execute
+        let main_function = Function {
+            name: "main".to_string(),
+            arity: 0,
+            chunk: Chunk::new(),
+            upvalue_count: 0,
+        };
+        
+        let main_closure = Closure::new(Rc::new(main_function));
+        let main_closure_rc = Rc::new(main_closure);
+        
+        // Set up the call frame with the local variable at slot 0
+        vm.push_frame(main_closure_rc, 0).unwrap();
+        
+        // Now manually execute the OP_CLOSURE instruction
+        let function_value = Value::function(function);
+        vm.push(function_value).unwrap();
+        
+        // Simulate the OP_CLOSURE instruction execution
+        let function_val = vm.pop().unwrap();
+        let function_obj = match &function_val {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    if let Object::Function(func) = &*obj_ref {
+                        Rc::new(func.clone())
+                    } else {
+                        panic!("Expected function");
+                    }
+                } else {
+                    panic!("Cannot borrow function");
+                }
+            }
+            _ => panic!("Expected function object"),
+        };
+
+        // Create the closure
+        let mut closure = Closure::new(function_obj.clone());
+
+        // Capture upvalue (is_local=true, index=0)
+        let upvalue = vm.capture_upvalue(0); // Capture stack slot 0
+        closure.upvalues.push(upvalue);
+
+        // Push the closure back
+        let closure_value = Value::closure(closure);
+        vm.push(closure_value).unwrap();
+        
+        // Check that an upvalue was created
+        assert_eq!(vm.open_upvalues.len(), 1);
+        
+        // The closure should be on the stack
+        let result = vm.pop().unwrap();
+        assert!(result.is_closure());
+    }
+
+    #[test]
+    fn test_upvalue_access_instructions() {
+        let mut vm = VM::new();
+        
+        // Set up a closure with upvalues
+        vm.push(Value::Number(42.0)).unwrap(); // Stack slot 0
+        vm.push(Value::Number(100.0)).unwrap(); // Stack slot 1
+        
+        // Create a function that uses upvalues
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_UPVALUE, 0, 1); // Get first upvalue
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_UPVALUE, 1, 1); // Get second upvalue
+        function_chunk.write_instruction(OpCode::OP_ADD, 1); // Add them
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function {
+            name: "test_func".to_string(),
+            arity: 0,
+            chunk: function_chunk,
+            upvalue_count: 2,
+        };
+        
+        // Create a closure with two upvalues
+        let mut closure = Closure::new(Rc::new(function));
+        let upvalue1 = vm.capture_upvalue(0); // Capture stack slot 0 (42.0)
+        let upvalue2 = vm.capture_upvalue(1); // Capture stack slot 1 (100.0)
+        closure.upvalues.push(upvalue1);
+        closure.upvalues.push(upvalue2);
+        
+        // Set up a call frame for the closure
+        vm.push_frame(Rc::new(closure), 2).unwrap(); // Start after the captured values
+        
+        let result = vm.run().unwrap();
+        
+        // Result should be 42.0 + 100.0 = 142.0
+        assert_eq!(result, Value::Number(142.0));
+    }
+
+    #[test]
+    fn test_upvalue_set_instruction() {
+        let mut vm = VM::new();
+        
+        // Set up initial values
+        vm.push(Value::Number(42.0)).unwrap(); // Stack slot 0
+        
+        // Create a function that modifies an upvalue
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_constant(Value::Number(999.0), 1).unwrap(); // New value
+        function_chunk.write_instruction_with_byte(OpCode::OP_SET_UPVALUE, 0, 1); // Set first upvalue
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_UPVALUE, 0, 1); // Get the modified value
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function {
+            name: "test_func".to_string(),
+            arity: 0,
+            chunk: function_chunk,
+            upvalue_count: 1,
+        };
+        
+        // Create a closure with one upvalue
+        let mut closure = Closure::new(Rc::new(function));
+        let upvalue = vm.capture_upvalue(0); // Capture stack slot 0
+        closure.upvalues.push(upvalue);
+        
+        // Set up a call frame for the closure
+        vm.push_frame(Rc::new(closure), 1).unwrap(); // Start after the captured value
+        
+        let result = vm.run().unwrap();
+        
+        // Result should be the new value (999.0)
+        assert_eq!(result, Value::Number(999.0));
+        
+        // The original stack slot should also be modified
+        assert_eq!(vm.stack[0], Value::Number(999.0));
+    }
+
+    #[test]
+    fn test_closed_upvalue_access() {
+        let mut vm = VM::new();
+        
+        // Set up initial values
+        vm.push(Value::Number(42.0)).unwrap(); // Stack slot 0
+        
+        // Create a closure with one upvalue
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_UPVALUE, 0, 1);
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function {
+            name: "test_func".to_string(),
+            arity: 0,
+            chunk: function_chunk,
+            upvalue_count: 1,
+        };
+        
+        let mut closure = Closure::new(Rc::new(function));
+        let upvalue = vm.capture_upvalue(0);
+        closure.upvalues.push(upvalue.clone());
+        
+        // Close the upvalue manually
+        vm.close_upvalues(0);
+        
+        // Verify the upvalue is closed
+        if let Ok(uv_ref) = upvalue.try_borrow() {
+            assert!(uv_ref.is_closed());
+        }
+        
+        // Set up a call frame and run
+        vm.push_frame(Rc::new(closure), 1).unwrap();
+        
+        let result = vm.run().unwrap();
+        
+        // Should still return the original value even though it's closed
+        assert_eq!(result, Value::Number(42.0));
+    }
+
+    #[test]
+    fn test_close_upvalue_instruction() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Set up some local variables
+        chunk.write_constant(Value::Number(10.0), 1).unwrap(); // Local 0
+        chunk.write_constant(Value::Number(20.0), 1).unwrap(); // Local 1
+        chunk.write_constant(Value::Number(30.0), 1).unwrap(); // Local 2
+        
+        // Create a function that captures upvalues
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction(OpCode::OP_NIL, 1);
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function {
+            name: "test_func".to_string(),
+            arity: 0,
+            chunk: function_chunk,
+            upvalue_count: 2,
+        };
+        
+        // Add function as constant
+        chunk.write_constant(Value::function(function), 1).unwrap();
+        
+        // Create closure with upvalues
+        chunk.write_instruction_with_byte(OpCode::OP_CLOSURE, 3, 1);
+        chunk.write_byte(1, 1); // is_local = true
+        chunk.write_byte(0, 1); // index = 0 (first local)
+        chunk.write_byte(1, 1); // is_local = true  
+        chunk.write_byte(1, 1); // index = 1 (second local)
+        
+        // Close upvalue at slot 1 (this should close the second upvalue)
+        chunk.write_instruction_with_byte(OpCode::OP_CLOSE_UPVALUE, 1, 1);
+        
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk).unwrap();
+        
+        // Result should be the closure
+        assert!(result.is_closure());
+        
+        // Since OP_RETURN closes all upvalues at frame.slots (which is 0),
+        // all upvalues should be closed
+        assert_eq!(vm.open_upvalues.len(), 0);
+    }
+
+    #[test]
+    fn test_automatic_upvalue_closing_on_return() {
+        let mut vm = VM::new();
+        
+        // Create a nested function scenario
+        // Outer function creates locals, inner function captures them, then outer returns
+        
+        // Set up outer function locals
+        vm.push(Value::Number(42.0)).unwrap(); // Slot 0
+        vm.push(Value::Number(100.0)).unwrap(); // Slot 1
+        
+        // Create inner function that captures upvalues
+        let mut inner_chunk = Chunk::new();
+        inner_chunk.write_instruction_with_byte(OpCode::OP_GET_UPVALUE, 0, 1);
+        inner_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let inner_function = Function {
+            name: "inner".to_string(),
+            arity: 0,
+            chunk: inner_chunk,
+            upvalue_count: 1,
+        };
+        
+        // Create closure for inner function
+        let mut inner_closure = Closure::new(Rc::new(inner_function));
+        let upvalue = vm.capture_upvalue(0); // Capture slot 0
+        inner_closure.upvalues.push(upvalue.clone());
+        
+        // Verify upvalue is initially open
+        assert_eq!(vm.open_upvalues.len(), 1);
+        if let Ok(uv_ref) = upvalue.try_borrow() {
+            assert!(!uv_ref.is_closed());
+        }
+        
+        // Create outer function frame
+        let outer_function = Function {
+            name: "outer".to_string(),
+            arity: 0,
+            chunk: Chunk::new(),
+            upvalue_count: 0,
+        };
+        let outer_closure = Closure::new(Rc::new(outer_function));
+        vm.push_frame(Rc::new(outer_closure), 0).unwrap();
+        
+        // Now simulate the outer function returning (which should close upvalues)
+        vm.push(Value::Number(999.0)).unwrap(); // Return value
+        let frame = vm.pop_frame().unwrap();
+        vm.close_upvalues(frame.slots); // This should close upvalues at slot 0 and above
+        
+        // Verify upvalue is now closed
+        if let Ok(uv_ref) = upvalue.try_borrow() {
+            assert!(uv_ref.is_closed());
+            if let crate::object::UpvalueLocation::Closed(value) = &uv_ref.location {
+                assert_eq!(*value, Value::Number(42.0));
+            }
+        }
+        
+        // Open upvalues list should be empty
+        assert_eq!(vm.open_upvalues.len(), 0);
     }
 
     #[test]

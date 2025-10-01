@@ -120,31 +120,31 @@
   - Test local variable access and scoping
   - _Requirements: 1.8, 3.3, 3.4, 3.6, 3.8_
 
-- [ ] 5. Implement closure support and upvalue system
+- [x] 5. Implement closure support and upvalue system
   - Add Upvalue and Closure objects
   - Implement upvalue capture and closure creation
   - Add support for lexical scoping across function boundaries
   - _Requirements: 1.9, 1.10, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8_
 
-- [ ] 5.1 Create Upvalue object and management system
+- [x] 5.1 Create Upvalue object and management system
   - Implement Upvalue struct with location tracking
   - Add open/closed upvalue state management
   - Create upvalue list management in VM
   - _Requirements: 1.10, 7.3, 7.4, 7.5_
 
-- [ ] 5.2 Implement Closure object and creation
+- [x] 5.2 Implement Closure object and creation
   - Create Closure struct with function and upvalues
   - Implement OP_CLOSURE instruction with upvalue capture
   - Add upvalue metadata encoding in bytecode
   - _Requirements: 1.9, 7.2, 7.6_
 
-- [ ] 5.3 Add upvalue access instructions
+- [x] 5.3 Add upvalue access instructions
   - Implement OP_GET_UPVALUE and OP_SET_UPVALUE
   - Add upvalue indexing and access logic
   - Ensure proper upvalue sharing between closures
   - _Requirements: 7.6, 7.7_
 
-- [ ] 5.4 Implement upvalue closing mechanism
+- [x] 5.4 Implement upvalue closing mechanism
   - Add OP_CLOSE_UPVALUE instruction
   - Implement upvalue closing when variables leave scope
   - Add automatic upvalue closing on function return
