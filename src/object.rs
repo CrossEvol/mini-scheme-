@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use crate::bytecode::Chunk;
 
 /// The fundamental Value type that represents all Scheme values
 #[derive(Debug, Clone)]
@@ -60,13 +61,7 @@ pub enum UpvalueLocation {
     Closed(Value),     // Contains the closed value (closed upvalue)
 }
 
-/// Placeholder for bytecode chunk - will be implemented in later tasks
-#[derive(Debug)]
-pub struct Chunk {
-    pub code: Vec<u8>,
-    pub constants: Vec<Value>,
-    pub lines: Vec<usize>,
-}
+
 
 impl Cons {
     /// Create a new cons cell
@@ -81,11 +76,7 @@ impl Function {
         Function {
             name,
             arity,
-            chunk: Chunk {
-                code: Vec::new(),
-                constants: Vec::new(),
-                lines: Vec::new(),
-            },
+            chunk: Chunk::new(),
             upvalue_count: 0,
         }
     }

@@ -1,5 +1,6 @@
 // Module declarations
 pub mod ast;
+pub mod bytecode;
 pub mod error;
 pub mod lexer;
 pub mod object;
@@ -8,6 +9,7 @@ pub mod token;
 
 // Re-exports for convenience
 pub use ast::Expr;
+pub use bytecode::{Chunk, Disassembler, OpCode};
 pub use error::{LexError, ParseError};
 pub use lexer::Lexer;
 pub use object::{Closure, Cons, Function, Object, Upvalue, Value};

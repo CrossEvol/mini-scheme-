@@ -24,25 +24,25 @@
   - Test value equality and comparison
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.9, 1.11_
 
-- [ ] 2. Implement bytecode instruction system
+- [x] 2. Implement bytecode instruction system
   - Define OpCode enum with all required instructions
   - Create Chunk structure to hold bytecode and constants
   - Implement instruction encoding and operand handling
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
 
-- [ ] 2.1 Define bytecode instruction set
+- [x] 2.1 Define bytecode instruction set
   - Create OpCode enum with all instructions from design
   - Add instruction operand specifications
   - Implement instruction size calculation
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
 
-- [ ] 2.2 Create bytecode chunk structure
+- [x] 2.2 Create bytecode chunk structure
   - Implement Chunk struct with code, constants, and line info
   - Add methods to write instructions and constants
   - Implement constant pool management
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
 
-- [ ] 2.3 Implement disassembler for debugging
+- [x] 2.3 Implement disassembler for debugging
   - Create Disassembler struct with instruction formatting
   - Add methods to disassemble individual instructions
   - Implement chunk disassembly with line numbers
