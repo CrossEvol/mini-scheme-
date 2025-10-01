@@ -1,16 +1,18 @@
 // Module declarations
-pub mod error;
-pub mod token;
 pub mod ast;
+pub mod error;
 pub mod lexer;
+pub mod object;
 pub mod parser;
+pub mod token;
 
 // Re-exports for convenience
-pub use error::{LexError, ParseError};
-pub use token::{Token, TokenInfo};
 pub use ast::Expr;
+pub use error::{LexError, ParseError};
 pub use lexer::Lexer;
+pub use object::{Closure, Cons, Function, Object, Upvalue, Value};
 pub use parser::Parser;
+pub use token::{Token, TokenInfo};
 
 #[cfg(test)]
 mod tests {
@@ -20,7 +22,7 @@ mod tests {
     fn test_lexer_identifiers() {
         let mut lexer = Lexer::new("hello world + - * /");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 7); // 6 tokens + EOF
         assert_eq!(tokens[0].token, Token::Identifier("hello".to_string()));
         assert_eq!(tokens[1].token, Token::Identifier("world".to_string()));
@@ -35,7 +37,7 @@ mod tests {
     fn test_lexer_keywords() {
         let mut lexer = Lexer::new("define lambda if cond else");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 6); // 5 tokens + EOF
         assert_eq!(tokens[0].token, Token::Define);
         assert_eq!(tokens[1].token, Token::Lambda);
@@ -49,7 +51,7 @@ mod tests {
     fn test_lexer_predicates() {
         let mut lexer = Lexer::new("null? pair? eq? string=?");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 5); // 4 tokens + EOF
         assert_eq!(tokens[0].token, Token::NullQ);
         assert_eq!(tokens[1].token, Token::PairQ);
@@ -62,7 +64,7 @@ mod tests {
     fn test_lexer_booleans() {
         let mut lexer = Lexer::new("#t #f");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 3); // 2 tokens + EOF
         assert_eq!(tokens[0].token, Token::Boolean(true));
         assert_eq!(tokens[1].token, Token::Boolean(false));
@@ -73,7 +75,7 @@ mod tests {
     fn test_lexer_whitespace_and_comments() {
         let mut lexer = Lexer::new("hello ; this is a comment\nworld");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 3); // 2 tokens + EOF
         assert_eq!(tokens[0].token, Token::Identifier("hello".to_string()));
         assert_eq!(tokens[1].token, Token::Identifier("world".to_string()));
@@ -84,7 +86,7 @@ mod tests {
     fn test_lexer_position_tracking() {
         let mut lexer = Lexer::new("hello\nworld");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens[0].line, 1);
         assert_eq!(tokens[0].column, 1);
         assert_eq!(tokens[1].line, 2);
@@ -95,7 +97,7 @@ mod tests {
     fn test_lexer_special_identifiers() {
         let mut lexer = Lexer::new("set! string->number list->vector");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 4); // 3 tokens + EOF
         assert_eq!(tokens[0].token, Token::SetBang);
         assert_eq!(tokens[1].token, Token::StringToNumber);
@@ -107,7 +109,7 @@ mod tests {
     fn test_lexer_hashtable_operations() {
         let mut lexer = Lexer::new("make-hashtable hashtable-set! hashtable-ref hashtable?");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 5); // 4 tokens + EOF
         assert_eq!(tokens[0].token, Token::MakeHashtable);
         assert_eq!(tokens[1].token, Token::HashtableSet);
@@ -120,7 +122,7 @@ mod tests {
     fn test_lexer_comparison_operators() {
         let mut lexer = Lexer::new("= < <= > >=");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 6); // 5 tokens + EOF
         assert_eq!(tokens[0].token, Token::Equal);
         assert_eq!(tokens[1].token, Token::LessThan);
@@ -134,7 +136,7 @@ mod tests {
     fn test_lexer_mixed_content() {
         let mut lexer = Lexer::new("define my-func lambda ; comment\n+ - custom-id");
         let tokens = lexer.tokenize().unwrap();
-        
+
         assert_eq!(tokens.len(), 7); // 6 tokens + EOF
         assert_eq!(tokens[0].token, Token::Define);
         assert_eq!(tokens[1].token, Token::Identifier("my-func".to_string()));

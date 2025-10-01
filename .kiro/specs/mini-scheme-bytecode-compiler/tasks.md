@@ -1,18 +1,18 @@
 # Implementation Plan
 
-- [ ] 1. Set up core object system and value types
+- [x] 1. Set up core object system and value types
   - Create the fundamental Value enum and Object types for runtime representation
   - Implement Cons cells as the foundation for Scheme lists
   - Add support for all basic Scheme data types (numbers, strings, characters, booleans, nil)
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.11_
 
-- [ ] 1.1 Create core value and object type definitions
+- [x] 1.1 Create core value and object type definitions
   - Define Value enum with Number, Boolean, Nil, and Object variants
   - Define Object enum with String, Character, Cons, Vector, Hashtable, Function, Closure, Upvalue variants
   - Implement Cons struct with car and cdr fields
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.9, 1.11_
 
-- [ ] 1.2 Implement value type checking and conversion utilities
+- [x] 1.2 Implement value type checking and conversion utilities
   - Add methods to check value types (is_number, is_string, etc.)
   - Implement safe value extraction methods (as_number, as_string, etc.)
   - Add value comparison and equality operations
