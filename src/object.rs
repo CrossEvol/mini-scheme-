@@ -33,7 +33,7 @@ pub struct Cons {
 }
 
 /// Function object containing bytecode and metadata
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub arity: usize,
@@ -42,20 +42,20 @@ pub struct Function {
 }
 
 /// Closure object that captures upvalues from its environment
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Closure {
     pub function: Rc<Function>,
     pub upvalues: Vec<Rc<RefCell<Upvalue>>>,
 }
 
 /// Upvalue for capturing variables from enclosing scopes
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Upvalue {
     pub location: UpvalueLocation,
 }
 
 /// Location of an upvalue - either on the stack (open) or closed on the heap
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UpvalueLocation {
     Stack(usize),      // Points to stack slot (open upvalue)
     Closed(Value),     // Contains the closed value (closed upvalue)
@@ -79,6 +79,31 @@ impl Function {
             chunk: Chunk::new(),
             upvalue_count: 0,
         }
+    }
+
+    /// Create a new function with a specific chunk
+    pub fn with_chunk(name: String, arity: usize, chunk: Chunk) -> Self {
+        Function {
+            name,
+            arity,
+            chunk,
+            upvalue_count: 0,
+        }
+    }
+
+    /// Check if this function can accept the given number of arguments
+    pub fn check_arity(&self, arg_count: usize) -> bool {
+        self.arity == arg_count
+    }
+
+    /// Get the function's name for debugging
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the function's arity
+    pub fn arity(&self) -> usize {
+        self.arity
     }
 }
 

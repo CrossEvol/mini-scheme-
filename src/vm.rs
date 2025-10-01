@@ -49,6 +49,21 @@ impl CallFrame {
             slots,
         }
     }
+
+    /// Get the current function being executed in this frame
+    pub fn function(&self) -> &Function {
+        &self.closure.function
+    }
+
+    /// Get the current chunk being executed
+    pub fn chunk(&self) -> &Chunk {
+        &self.closure.function.chunk
+    }
+
+    /// Check if this frame can accept the given number of arguments
+    pub fn check_arity(&self, arg_count: usize) -> bool {
+        self.closure.function.arity == arg_count
+    }
 }
 
 /// Stack-based virtual machine for executing MiniScheme bytecode
@@ -226,9 +241,7 @@ impl VM {
         let main_closure_rc = Rc::new(main_closure);
 
         // Create the initial call frame
-        let frame = CallFrame::new(main_closure_rc, 0);
-        self.frames.push(frame);
-        self.frame_count = 1;
+        self.push_frame(main_closure_rc, 0)?;
 
         // Run the main execution loop
         self.run()
@@ -270,6 +283,19 @@ impl VM {
 
                 OpCode::OP_POP => {
                     self.pop()?;
+                }
+
+                OpCode::OP_GET_LOCAL => {
+                    let slot = self.read_byte()? as usize;
+                    let value = self.get_local(slot)?;
+                    self.push(value)?;
+                }
+
+                OpCode::OP_SET_LOCAL => {
+                    let slot = self.read_byte()? as usize;
+                    let value = self.peek(0)?.clone(); // Don't pop yet in case of error
+                    self.set_local(slot, value)?;
+                    // Value stays on stack for assignment expressions
                 }
 
                 OpCode::OP_GET_GLOBAL => {
@@ -341,17 +367,21 @@ impl VM {
                     }
                 }
 
+                OpCode::OP_CALL => {
+                    let arg_count = self.read_byte()? as usize;
+                    self.call_value(arg_count)?;
+                }
+
                 OpCode::OP_RETURN => {
                     let result = self.pop()?;
-                    self.frame_count -= 1;
+                    let frame = self.pop_frame()?;
                     
                     if self.frame_count == 0 {
                         // End of program
                         return Ok(result);
                     }
                     
-                    // Restore stack to frame boundary
-                    let frame = &self.frames[self.frame_count];
+                    // Restore stack to frame boundary and push result
                     self.stack_top = frame.slots;
                     self.push(result)?;
                 }
@@ -477,6 +507,154 @@ impl VM {
                 got: format!("{} and {}", self.type_name(&a_val), self.type_name(&b_val)),
             }),
         }
+    }
+
+    // Call frame management methods
+
+    /// Get the current call frame
+    pub fn current_frame(&self) -> Option<&CallFrame> {
+        if self.frame_count > 0 {
+            Some(&self.frames[self.frame_count - 1])
+        } else {
+            None
+        }
+    }
+
+    /// Get the current call frame mutably
+    pub fn current_frame_mut(&mut self) -> Option<&mut CallFrame> {
+        if self.frame_count > 0 {
+            Some(&mut self.frames[self.frame_count - 1])
+        } else {
+            None
+        }
+    }
+
+    /// Push a new call frame onto the frame stack
+    pub fn push_frame(&mut self, closure: Rc<Closure>, slots: usize) -> Result<(), RuntimeError> {
+        if self.frame_count >= FRAMES_MAX {
+            return Err(RuntimeError::StackOverflow);
+        }
+
+        let frame = CallFrame::new(closure, slots);
+        if self.frames.len() <= self.frame_count {
+            self.frames.resize(self.frame_count + 1, frame.clone());
+        }
+        self.frames[self.frame_count] = frame;
+        self.frame_count += 1;
+        Ok(())
+    }
+
+    /// Pop the current call frame from the frame stack
+    pub fn pop_frame(&mut self) -> Result<CallFrame, RuntimeError> {
+        if self.frame_count == 0 {
+            return Err(RuntimeError::InvalidOperation("No frames to pop".to_string()));
+        }
+
+        self.frame_count -= 1;
+        Ok(self.frames[self.frame_count].clone())
+    }
+
+    /// Get the current function being executed
+    pub fn current_function(&self) -> Option<&Function> {
+        self.current_frame().map(|frame| frame.function())
+    }
+
+    /// Get the current chunk being executed
+    pub fn current_chunk(&self) -> Option<&Chunk> {
+        self.current_frame().map(|frame| frame.chunk())
+    }
+
+    // Local variable support methods
+
+    /// Get a local variable from the current call frame
+    fn get_local(&self, slot: usize) -> Result<Value, RuntimeError> {
+        if let Some(frame) = self.current_frame() {
+            let absolute_slot = frame.slots + slot;
+            if absolute_slot < self.stack_top {
+                Ok(self.stack[absolute_slot].clone())
+            } else {
+                Err(RuntimeError::InvalidOperation(
+                    format!("Local variable slot {} out of bounds", slot)
+                ))
+            }
+        } else {
+            Err(RuntimeError::InvalidOperation("No active call frame".to_string()))
+        }
+    }
+
+    /// Set a local variable in the current call frame
+    fn set_local(&mut self, slot: usize, value: Value) -> Result<(), RuntimeError> {
+        if let Some(frame) = self.current_frame() {
+            let absolute_slot = frame.slots + slot;
+            if absolute_slot < self.stack_top {
+                self.stack[absolute_slot] = value;
+                Ok(())
+            } else {
+                Err(RuntimeError::InvalidOperation(
+                    format!("Local variable slot {} out of bounds", slot)
+                ))
+            }
+        } else {
+            Err(RuntimeError::InvalidOperation("No active call frame".to_string()))
+        }
+    }
+
+    // Function call support methods
+
+    /// Call a value with the given number of arguments
+    fn call_value(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        let callee = self.peek(arg_count)?.clone();
+        
+        match &callee {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        Object::Function(function) => {
+                            // Create a closure from the function and call it
+                            let closure = Closure::new(Rc::new(function.clone()));
+                            self.call_closure(Rc::new(closure), arg_count)
+                        }
+                        Object::Closure(closure) => {
+                            // Call the closure directly
+                            let closure_rc = Rc::new(closure.clone());
+                            self.call_closure(closure_rc, arg_count)
+                        }
+                        _ => Err(RuntimeError::TypeError {
+                            expected: "function or closure".to_string(),
+                            got: self.type_name(&callee),
+                        }),
+                    }
+                } else {
+                    Err(RuntimeError::InvalidOperation("Cannot borrow object".to_string()))
+                }
+            }
+            _ => Err(RuntimeError::TypeError {
+                expected: "function or closure".to_string(),
+                got: self.type_name(&callee),
+            }),
+        }
+    }
+
+    /// Call a closure with the given number of arguments
+    fn call_closure(&mut self, closure: Rc<Closure>, arg_count: usize) -> Result<(), RuntimeError> {
+        // Check arity
+        if !closure.function.check_arity(arg_count) {
+            return Err(RuntimeError::ArityMismatch {
+                expected: closure.function.arity,
+                got: arg_count,
+            });
+        }
+
+        // Calculate the slot where the function's locals will start
+        // The arguments are the function's first local variables
+        // Stack layout: [..., function, arg0, arg1, ..., argN-1]
+        // We want locals to start at the position of arg0
+        let slots = self.stack_top - arg_count;
+
+        // Create and push the new call frame
+        self.push_frame(closure, slots)?;
+
+        Ok(())
     }
 
     /// Get the type name of a value for error messages
@@ -708,6 +886,274 @@ mod tests {
         
         vm.disable_trace();
         assert!(!vm.trace_execution);
+    }
+
+    #[test]
+    fn test_call_frame_management() {
+        let mut vm = VM::new();
+        
+        // Initially no frames
+        assert_eq!(vm.frame_count, 0);
+        assert!(vm.current_frame().is_none());
+        assert!(vm.current_function().is_none());
+        assert!(vm.current_chunk().is_none());
+        
+        // Create a test function and closure
+        let function = Function::new("test".to_string(), 0);
+        let closure = Closure::new(Rc::new(function));
+        let closure_rc = Rc::new(closure);
+        
+        // Push a frame
+        vm.push_frame(closure_rc.clone(), 0).unwrap();
+        assert_eq!(vm.frame_count, 1);
+        assert!(vm.current_frame().is_some());
+        assert!(vm.current_function().is_some());
+        assert!(vm.current_chunk().is_some());
+        
+        // Check frame properties
+        let frame = vm.current_frame().unwrap();
+        assert_eq!(frame.slots, 0);
+        assert_eq!(frame.ip, 0);
+        assert_eq!(frame.function().name, "test");
+        assert_eq!(frame.function().arity, 0);
+        assert!(frame.check_arity(0));
+        assert!(!frame.check_arity(1));
+        
+        // Pop the frame
+        let popped_frame = vm.pop_frame().unwrap();
+        assert_eq!(vm.frame_count, 0);
+        assert_eq!(popped_frame.function().name, "test");
+        assert!(vm.current_frame().is_none());
+    }
+
+    #[test]
+    fn test_call_frame_stack_overflow() {
+        let mut vm = VM::new();
+        let function = Function::new("test".to_string(), 0);
+        let closure = Closure::new(Rc::new(function));
+        let closure_rc = Rc::new(closure);
+        
+        // Fill up the frame stack
+        for _ in 0..FRAMES_MAX {
+            vm.push_frame(closure_rc.clone(), 0).unwrap();
+        }
+        
+        // Next push should fail
+        let result = vm.push_frame(closure_rc, 0);
+        assert!(matches!(result, Err(RuntimeError::StackOverflow)));
+    }
+
+    #[test]
+    fn test_call_frame_underflow() {
+        let mut vm = VM::new();
+        
+        // Try to pop from empty frame stack
+        let result = vm.pop_frame();
+        assert!(matches!(result, Err(RuntimeError::InvalidOperation(_))));
+    }
+
+    #[test]
+    fn test_function_methods() {
+        let function = Function::new("test_func".to_string(), 2);
+        
+        assert_eq!(function.name(), "test_func");
+        assert_eq!(function.arity(), 2);
+        assert!(function.check_arity(2));
+        assert!(!function.check_arity(1));
+        assert!(!function.check_arity(3));
+        
+        // Test function with chunk
+        let chunk = Chunk::new();
+        let function_with_chunk = Function::with_chunk("test2".to_string(), 1, chunk);
+        assert_eq!(function_with_chunk.name(), "test2");
+        assert_eq!(function_with_chunk.arity(), 1);
+    }
+
+    #[test]
+    fn test_simple_function_call() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Create a simple function that returns 42
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_constant(Value::Number(42.0), 1).unwrap();
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function::with_chunk("test_func".to_string(), 0, function_chunk);
+        let function_value = Value::function(function);
+        
+        // Main program: push function, call it with 0 args, return result
+        chunk.write_constant(function_value, 1).unwrap();
+        chunk.write_instruction_with_byte(OpCode::OP_CALL, 0, 1); // 0 arguments
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk).unwrap();
+        assert_eq!(result, Value::Number(42.0));
+    }
+
+    #[test]
+    fn test_function_call_with_arguments() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Create a function that adds its two arguments
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 0, 1); // First arg
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 1, 1); // Second arg
+        function_chunk.write_instruction(OpCode::OP_ADD, 1);
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function::with_chunk("add_func".to_string(), 2, function_chunk);
+        let function_value = Value::function(function);
+        
+        // Main program: push function, push args, call function
+        chunk.write_constant(function_value, 1).unwrap();
+        chunk.write_constant(Value::Number(3.0), 1).unwrap(); // First arg
+        chunk.write_constant(Value::Number(4.0), 1).unwrap(); // Second arg
+        chunk.write_instruction_with_byte(OpCode::OP_CALL, 2, 1); // 2 arguments
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk).unwrap();
+        assert_eq!(result, Value::Number(7.0));
+    }
+
+    #[test]
+    fn test_function_call_arity_mismatch() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Create a function that expects 2 arguments
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction(OpCode::OP_NIL, 1);
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function::with_chunk("test_func".to_string(), 2, function_chunk);
+        let function_value = Value::function(function);
+        
+        // Try to call with wrong number of arguments
+        chunk.write_constant(function_value, 1).unwrap();
+        chunk.write_constant(Value::Number(1.0), 1).unwrap(); // Only 1 arg, but function expects 2
+        chunk.write_instruction_with_byte(OpCode::OP_CALL, 1, 1);
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk);
+        assert!(matches!(result, Err(RuntimeError::ArityMismatch { expected: 2, got: 1 })));
+    }
+
+    #[test]
+    fn test_call_non_function() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Try to call a number (not a function)
+        chunk.write_constant(Value::Number(42.0), 1).unwrap();
+        chunk.write_instruction_with_byte(OpCode::OP_CALL, 0, 1);
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk);
+        assert!(matches!(result, Err(RuntimeError::TypeError { .. })));
+    }
+
+    #[test]
+    fn test_local_variable_access() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Create a function that returns its first argument
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 0, 1); // Get first arg
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function::with_chunk("identity".to_string(), 1, function_chunk);
+        let function_value = Value::function(function);
+        
+        // Main program: call function with argument 42
+        chunk.write_constant(function_value, 1).unwrap();
+        chunk.write_constant(Value::Number(42.0), 1).unwrap();
+        chunk.write_instruction_with_byte(OpCode::OP_CALL, 1, 1);
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk).unwrap();
+        assert_eq!(result, Value::Number(42.0));
+    }
+
+    #[test]
+    fn test_local_variable_set() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Create a function that modifies its first argument and returns it
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_constant(Value::Number(100.0), 1).unwrap(); // New value
+        function_chunk.write_instruction_with_byte(OpCode::OP_SET_LOCAL, 0, 1); // Set first arg
+        function_chunk.write_instruction(OpCode::OP_POP, 1); // Pop the assignment result
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 0, 1); // Get modified arg
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function::with_chunk("modify".to_string(), 1, function_chunk);
+        let function_value = Value::function(function);
+        
+        // Main program: call function with argument 42
+        chunk.write_constant(function_value, 1).unwrap();
+        chunk.write_constant(Value::Number(42.0), 1).unwrap();
+        chunk.write_instruction_with_byte(OpCode::OP_CALL, 1, 1);
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk).unwrap();
+        assert_eq!(result, Value::Number(100.0));
+    }
+
+    #[test]
+    fn test_multiple_local_variables() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Create a function that swaps its two arguments and returns the first
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 1, 1); // Get second arg
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 0, 1); // Get first arg
+        function_chunk.write_instruction_with_byte(OpCode::OP_SET_LOCAL, 1, 1); // Set second = first
+        function_chunk.write_instruction(OpCode::OP_POP, 1); // Pop assignment result
+        function_chunk.write_instruction_with_byte(OpCode::OP_SET_LOCAL, 0, 1); // Set first = original second
+        function_chunk.write_instruction(OpCode::OP_POP, 1); // Pop assignment result
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 0, 1); // Return new first
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function::with_chunk("swap_first".to_string(), 2, function_chunk);
+        let function_value = Value::function(function);
+        
+        // Main program: call function with arguments 10, 20
+        chunk.write_constant(function_value, 1).unwrap();
+        chunk.write_constant(Value::Number(10.0), 1).unwrap(); // First arg
+        chunk.write_constant(Value::Number(20.0), 1).unwrap(); // Second arg
+        chunk.write_instruction_with_byte(OpCode::OP_CALL, 2, 1);
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk).unwrap();
+        assert_eq!(result, Value::Number(20.0)); // Should return the original second arg
+    }
+
+    #[test]
+    fn test_local_variable_out_of_bounds() {
+        let mut vm = VM::new();
+        let mut chunk = Chunk::new();
+        
+        // Create a function that tries to access a non-existent local variable
+        let mut function_chunk = Chunk::new();
+        function_chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 5, 1); // Out of bounds
+        function_chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let function = Function::with_chunk("bad_access".to_string(), 1, function_chunk);
+        let function_value = Value::function(function);
+        
+        // Main program: call function with one argument
+        chunk.write_constant(function_value, 1).unwrap();
+        chunk.write_constant(Value::Number(42.0), 1).unwrap();
+        chunk.write_instruction_with_byte(OpCode::OP_CALL, 1, 1);
+        chunk.write_instruction(OpCode::OP_RETURN, 1);
+        
+        let result = vm.interpret(&chunk);
+        assert!(matches!(result, Err(RuntimeError::InvalidOperation(_))));
     }
 }    #[
 test]

@@ -90,25 +90,25 @@
   - Test global variable access and definition
   - _Requirements: 3.1, 3.2, 3.5, 3.11, 3.12, 3.13_
 
-- [ ] 4. Add function support without closures
+- [x] 4. Add function support without closures
   - Implement Function objects and call frames
   - Add support for function calls and returns
   - Implement local variable access by stack slot
   - _Requirements: 1.8, 3.8, 3.4, 3.6_
 
-- [ ] 4.1 Create Function object and call frame system
+- [x] 4.1 Create Function object and call frame system
   - Implement Function struct with bytecode and arity
   - Create CallFrame struct with closure, IP, and slots
   - Add call frame stack management in VM
   - _Requirements: 1.8, 3.8_
 
-- [ ] 4.2 Implement function call and return instructions
+- [x] 4.2 Implement function call and return instructions
   - Add OP_CALL instruction with argument handling
   - Implement OP_RETURN with value propagation
   - Add proper stack frame setup and cleanup
   - _Requirements: 3.8, 3.13_
 
-- [ ] 4.3 Add local variable operations
+- [x] 4.3 Add local variable operations
   - Implement OP_GET_LOCAL and OP_SET_LOCAL instructions
   - Add local variable slot management
   - Implement proper variable scoping within functions
