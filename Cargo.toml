@@ -3,4 +3,19 @@ name = "mini_scheme"
 version = "0.1.0"
 edition = "2024"
 
+# Main binary (full frontend)
+[[bin]]
+name = "mini_scheme"
+path = "src/main.rs"
+
+# Lexer-only binary
+[[bin]]
+name = "lexer"
+path = "bin/lexer/main.rs"
+
+# Parser-only binary  
+[[bin]]
+name = "parser"
+path = "bin/parser/main.rs"
+
 [dependencies]
