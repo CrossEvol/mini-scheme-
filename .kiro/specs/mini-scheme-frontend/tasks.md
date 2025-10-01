@@ -1,13 +1,20 @@
 # Implementation Plan
 
-- [ ] 1. Set up project structure and core modules
+- [x] 1. Set up project structure and core modules
+
+
+
+
   - Create the basic module structure with error handling foundation
   - Define the core error types for lexical and parsing errors
   - Set up the project's module organization in main.rs
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 7.1, 7.3_
 
-- [ ] 2. Implement token definitions and basic infrastructure
-  - [ ] 2.1 Create comprehensive token enum with all MiniScheme tokens
+- [X] 2. Implement token definitions and basic infrastructure
+
+  - [X] 2.1 Create comprehensive token enum with all MiniScheme tokens
+
+
     - Define Token enum with all literal types, keywords, special forms, built-ins, and punctuation
     - Implement TokenInfo struct with position tracking
     - Add Debug, PartialEq, and Clone traits for tokens
@@ -18,20 +25,20 @@
     - Verify all token variants are properly defined
     - _Requirements: 7.3_
 
-- [ ] 3. Implement lexer core functionality
-  - [ ] 3.1 Create lexer struct with character-based processing
+- [x] 3. Implement lexer core functionality
+  - [x] 3.1 Create lexer struct with character-based processing
     - Implement Lexer struct with input, position, line, and column tracking
     - Add basic character navigation methods (current_char, peek_char, advance)
     - Implement position tracking for error reporting
     - _Requirements: 1.1, 6.1, 6.4_
   
-  - [ ] 3.2 Implement whitespace and comment handling
+  - [x] 3.2 Implement whitespace and comment handling
     - Add skip_whitespace method to ignore spaces, tabs, newlines
     - Implement skip_comment method for semicolon-started comments
     - Ensure proper line and column tracking during skipping
     - _Requirements: 1.1_
   
-  - [ ] 3.3 Implement identifier and keyword tokenization
+  - [x] 3.3 Implement identifier and keyword tokenization
     - Add read_identifier method for alphanumeric and special characters
     - Create keyword_or_identifier method with keyword lookup table
     - Handle special identifier characters (+, -, *, /, !, ?, =, ->)
@@ -43,20 +50,28 @@
     - Test identifier and keyword recognition
     - _Requirements: 7.3_
 
-- [ ] 4. Implement literal value tokenization
-  - [ ] 4.1 Implement number tokenization
+- [x] 4. Implement literal value tokenization
+
+
+
+
+  - [x] 4.1 Implement number tokenization
+
+
     - Add read_number method for integers and floating-point numbers
-    - Handle scientific notation and edge cases
+    - only take number form like \d* or \d*.\d* into consideration 
     - Provide proper error reporting for invalid numbers
     - _Requirements: 1.3, 6.1, 6.4_
   
-  - [ ] 4.2 Implement string tokenization
+
+
+  - [x] 4.2 Implement string tokenization
     - Add read_string method with escape sequence handling
     - Handle unterminated string errors
     - Support standard escape sequences (\n, \t, \", \\)
     - _Requirements: 1.4, 6.1, 6.4_
   
-  - [ ] 4.3 Implement character and boolean tokenization
+  - [x] 4.3 Implement character and boolean tokenization
     - Add read_character method for #\ prefixed characters
     - Handle special character names (space, newline, tab)
     - Implement boolean recognition for #t and #f
@@ -68,14 +83,22 @@
     - Test character and boolean recognition
     - _Requirements: 7.3_
 
-- [ ] 5. Implement punctuation and special syntax tokenization
-  - [ ] 5.1 Add punctuation token recognition
+- [x] 5. Implement punctuation and special syntax tokenization
+
+
+
+
+  - [x] 5.1 Add punctuation token recognition
+
+
     - Implement recognition for parentheses, quote, backquote, comma, comma-at
     - Handle vector prefix (#) recognition
     - Add proper token creation for all punctuation
     - _Requirements: 1.7, 1.8_
   
-  - [ ] 5.2 Complete lexer with main tokenization loop
+  - [x] 5.2 Complete lexer with main tokenization loop
+
+
     - Implement next_token method with comprehensive token dispatch
     - Add tokenize method for full input processing
     - Handle end-of-file token generation
