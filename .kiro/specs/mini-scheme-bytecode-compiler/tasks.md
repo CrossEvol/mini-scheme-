@@ -54,31 +54,31 @@
   - Test disassembler output formatting
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
 
-- [ ] 3. Create basic virtual machine without closures
+- [x] 3. Create basic virtual machine without closures
   - Implement stack-based VM with call frames
   - Add support for basic arithmetic and comparison operations
   - Implement global variable storage and access
   - _Requirements: 3.1, 3.2, 3.11, 3.12, 3.13_
 
-- [ ] 3.1 Implement VM structure and stack management
+- [x] 3.1 Implement VM structure and stack management
   - Create VM struct with stack, frames, and globals
   - Implement stack push/pop operations with bounds checking
   - Add stack trace and debugging support
   - _Requirements: 3.1, 3.13_
 
-- [ ] 3.2 Implement basic instruction execution
+- [x] 3.2 Implement basic instruction execution
   - Add instruction dispatch loop in VM
   - Implement OP_CONSTANT, OP_NIL, OP_TRUE, OP_FALSE
   - Add OP_POP and basic stack operations
   - _Requirements: 3.1, 3.13_
 
-- [ ] 3.3 Add arithmetic and comparison operations
+- [x] 3.3 Add arithmetic and comparison operations
   - Implement OP_ADD, OP_SUBTRACT, OP_MULTIPLY, OP_DIVIDE
   - Add OP_EQUAL, OP_GREATER, OP_LESS operations
   - Implement OP_NOT and OP_NEGATE unary operations
   - _Requirements: 3.12, 3.13_
 
-- [ ] 3.4 Implement global variable operations
+- [x] 3.4 Implement global variable operations
   - Add OP_GET_GLOBAL and OP_SET_GLOBAL instructions
   - Implement OP_DEFINE_GLOBAL for variable definition
   - Add global variable table management

@@ -6,6 +6,7 @@ pub mod lexer;
 pub mod object;
 pub mod parser;
 pub mod token;
+pub mod vm;
 
 // Re-exports for convenience
 pub use ast::Expr;
@@ -15,6 +16,7 @@ pub use lexer::Lexer;
 pub use object::{Closure, Cons, Function, Object, Upvalue, Value};
 pub use parser::Parser;
 pub use token::{Token, TokenInfo};
+pub use vm::{VM, RuntimeError, CallFrame};
 
 #[cfg(test)]
 mod tests {
