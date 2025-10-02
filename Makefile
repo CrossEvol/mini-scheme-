@@ -3,6 +3,11 @@
 parser:                                                                    
 	cargo build --bin parser                                               
                                                                            
+# Build the compiler binary                                                
+.PHONY: compiler                                                           
+compiler:                                                                  
+	cargo build --bin compiler                                             
+                                                                           
 # Build the main mini_scheme binary                                        
 .PHONY: mini_scheme                                                        
 mini_scheme:                                                               
@@ -63,6 +68,11 @@ lexer-repl:
 parser-repl:                                                               
 	cargo run --bin parser                                                 
                                                                            
+# Run the compiler REPL                                                    
+.PHONY: compiler-repl                                                      
+compiler-repl:                                                             
+	cargo run --bin compiler                                               
+                                                                           
 # Run the main REPL                                                        
 .PHONY: repl                                                               
 repl:                                                                      
@@ -88,6 +98,16 @@ parse:
 	    echo "Please specify a file: make parse FILE=path/to/file.scm"; \  
 	fi                                                                     
                                                                            
+# Run compiler on a file
+.PHONY: compile
+compile:
+	@echo "Usage: make compile FILE=path/to/file.scm"
+	@if [ -n "$(FILE)" ]; then \
+	    cargo run --bin compiler -- $(FILE); \
+	else \
+	    echo "Please specify a file: make compile FILE=path/to/file.scm"; \
+	fi                                                                     
+                                                                           
 # Run main application on a file                                           
 .PHONY: run                                                                
 run:                                                                       
@@ -108,6 +128,7 @@ help:
 	@echo "  build         - Build all binaries"                           
 	@echo "  lexer         - Build lexer binary"                           
 	@echo "  parser        - Build parser binary"                          
+	@echo "  compiler      - Build compiler binary"                        
 	@echo "  mini_scheme   - Build main application"                       
 	@echo ""                                                               
 	@echo "Test targets:"                                                  
@@ -122,9 +143,11 @@ help:
 	@echo "  repl          - Run main REPL"                                
 	@echo "  lexer-repl    - Run lexer REPL"                               
 	@echo "  parser-repl   - Run parser REPL"                              
+	@echo "  compiler-repl - Run compiler REPL"                            
 	@echo "  run FILE=...  - Run main application on a file"               
 	@echo "  lex FILE=...  - Run lexer on a file"                          
 	@echo "  parse FILE=... - Run parser on a file"                        
+	@echo "  compile FILE=... - Run compiler on a file"                        
 	@echo ""                                                               
 	@echo "Utility targets:"                                               
 	@echo "  clean         - Clean build artifacts"                        

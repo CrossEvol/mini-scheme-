@@ -1,0 +1,1190 @@
+use crate::ast::{DefineExpr, Expr, LambdaExpr};
+use crate::bytecode::{Chunk, OpCode};
+use crate::object::{Function, Value};
+
+/// Type of function being compiled
+#[derive(Debug, Clone, PartialEq)]
+pub enum FunctionType {
+    Script,   // Top-level script
+    Function, // Regular function
+}
+
+/// Local variable information during compilation
+#[derive(Debug, Clone)]
+pub struct Local {
+    pub name: String,
+    pub depth: isize,      // -1 means uninitialized, 0+ is scope depth
+    pub is_captured: bool, // True if captured by a closure
+}
+
+/// Upvalue information during compilation
+#[derive(Debug, Clone)]
+pub struct CompilerUpvalue {
+    pub index: u8,
+    pub is_local: bool, // True if capturing local, false if capturing upvalue
+}
+
+/// Compilation error types
+#[derive(Debug, Clone)]
+pub enum CompileError {
+    TooManyConstants,
+    TooManyLocals,
+    TooManyUpvalues,
+    UndefinedVariable(String),
+    InvalidAssignmentTarget,
+    VariableAlreadyDefined(String),
+    JumpTooLarge,
+    LoopTooLarge,
+}
+
+impl std::fmt::Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompileError::TooManyConstants => write!(f, "Too many constants in one chunk"),
+            CompileError::TooManyLocals => write!(f, "Too many local variables in function"),
+            CompileError::TooManyUpvalues => write!(f, "Too many upvalues in function"),
+            CompileError::UndefinedVariable(name) => write!(f, "Undefined variable '{}'", name),
+            CompileError::InvalidAssignmentTarget => write!(f, "Invalid assignment target"),
+            CompileError::VariableAlreadyDefined(name) => {
+                write!(f, "Variable '{}' already defined in this scope", name)
+            }
+            CompileError::JumpTooLarge => write!(f, "Jump distance too large"),
+            CompileError::LoopTooLarge => write!(f, "Loop body too large"),
+        }
+    }
+}
+
+impl std::error::Error for CompileError {}
+
+/// Compiler for transforming AST to bytecode
+pub struct Compiler {
+    pub function: Function,
+    pub function_type: FunctionType,
+    pub locals: Vec<Local>,
+    pub upvalues: Vec<CompilerUpvalue>,
+    pub scope_depth: usize,
+    pub enclosing: Option<Box<Compiler>>,
+    pub trace_enabled: bool,
+}
+
+impl Compiler {
+    /// Create a new compiler for a script (top-level)
+    pub fn new_script() -> Self {
+        let mut compiler = Compiler {
+            function: Function::new("script".to_string(), 0),
+            function_type: FunctionType::Script,
+            locals: Vec::new(),
+            upvalues: Vec::new(),
+            scope_depth: 0,
+            enclosing: None,
+            trace_enabled: false,
+        };
+
+        // Reserve slot 0 for the script itself
+        compiler.locals.push(Local {
+            name: "".to_string(),
+            depth: 0,
+            is_captured: false,
+        });
+
+        compiler
+    }
+
+    /// Create a new compiler for a function
+    pub fn new_function(name: String, arity: usize, enclosing: Box<Compiler>) -> Self {
+        let mut compiler = Compiler {
+            function: Function::new(name, arity),
+            function_type: FunctionType::Function,
+            locals: Vec::new(),
+            upvalues: Vec::new(),
+            scope_depth: 0,
+            enclosing: Some(enclosing),
+            trace_enabled: false,
+        };
+
+        // Reserve slot 0 for the function itself
+        compiler.locals.push(Local {
+            name: "".to_string(),
+            depth: 0,
+            is_captured: false,
+        });
+
+        compiler
+    }
+
+    /// Enable compilation tracing
+    pub fn enable_trace(&mut self) {
+        self.trace_enabled = true;
+    }
+
+    /// Disable compilation tracing
+    pub fn disable_trace(&mut self) {
+        self.trace_enabled = false;
+    }
+
+    /// Trace a compilation step
+    fn trace(&self, message: &str) {
+        if self.trace_enabled {
+            println!("[COMPILE] {}", message);
+        }
+    }
+
+    /// Compile an expression to bytecode
+    pub fn compile_expr(&mut self, expr: &Expr) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling expression: {:?}", expr));
+
+        match expr {
+            // Literal expressions
+            Expr::Number(n) => self.compile_number(*n),
+            Expr::String(s) => self.compile_string(s.clone()),
+            Expr::Character(c) => self.compile_character(*c),
+            Expr::Boolean(b) => self.compile_boolean(*b),
+            Expr::Variable(name) => self.compile_variable(name),
+
+            // Function expressions
+            Expr::Lambda(lambda) => self.compile_lambda(lambda),
+            Expr::Call(func, args) => self.compile_call(func, args),
+
+            // Define expression
+            Expr::Define(define) => self.compile_define(define),
+
+            // Other expressions will be implemented in later subtasks
+            _ => {
+                self.trace(&format!("Expression type not yet implemented: {:?}", expr));
+                Err(CompileError::UndefinedVariable(
+                    "Not implemented".to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Compile a number literal
+    fn compile_number(&mut self, value: f64) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling number: {}", value));
+        self.emit_constant(Value::Number(value))?;
+        Ok(())
+    }
+
+    /// Compile a string literal
+    fn compile_string(&mut self, value: String) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling string: \"{}\"", value));
+        self.emit_constant(Value::string(value))?;
+        Ok(())
+    }
+
+    /// Compile a character literal
+    fn compile_character(&mut self, value: char) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling character: #\\{}", value));
+        self.emit_constant(Value::character(value))?;
+        Ok(())
+    }
+
+    /// Compile a boolean literal
+    fn compile_boolean(&mut self, value: bool) -> Result<(), CompileError> {
+        self.trace(&format!(
+            "Compiling boolean: {}",
+            if value { "#t" } else { "#f" }
+        ));
+        if value {
+            self.emit_byte(OpCode::OP_TRUE, 1);
+        } else {
+            self.emit_byte(OpCode::OP_FALSE, 1);
+        }
+        Ok(())
+    }
+
+    /// Compile a variable reference
+    fn compile_variable(&mut self, name: &str) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling variable reference: {}", name));
+
+        // Try to resolve as local variable first
+        if let Some(local_index) = self.resolve_local(name) {
+            self.trace(&format!(
+                "Resolved '{}' as local variable at slot {}",
+                name, local_index
+            ));
+            self.emit_bytes(OpCode::OP_GET_LOCAL, local_index as u8, 1);
+            return Ok(());
+        }
+
+        // Try to resolve as upvalue
+        if let Some(upvalue_index) = self.resolve_upvalue(name) {
+            self.trace(&format!(
+                "Resolved '{}' as upvalue at index {}",
+                name, upvalue_index
+            ));
+            self.emit_bytes(OpCode::OP_GET_UPVALUE, upvalue_index as u8, 1);
+            return Ok(());
+        }
+
+        // Fall back to global variable
+        self.trace(&format!("Resolved '{}' as global variable", name));
+        self.compile_global_get(name)
+    }
+
+    /// Emit a constant instruction
+    fn emit_constant(&mut self, value: Value) -> Result<usize, CompileError> {
+        let constant_index = self.function.chunk.add_constant(value);
+        if constant_index > 255 {
+            return Err(CompileError::TooManyConstants);
+        }
+        self.emit_bytes(OpCode::OP_CONSTANT, constant_index as u8, 1);
+        Ok(constant_index)
+    }
+
+    /// Add a constant to the pool without emitting an instruction
+    fn add_constant(&mut self, value: Value) -> Result<usize, CompileError> {
+        let constant_index = self.function.chunk.add_constant(value);
+        if constant_index > 255 {
+            return Err(CompileError::TooManyConstants);
+        }
+        Ok(constant_index)
+    }
+
+    /// Emit a single byte instruction
+    fn emit_byte(&mut self, opcode: OpCode, line: usize) {
+        self.function.chunk.write_instruction(opcode, line);
+        self.trace(&format!("Emitted: {}", opcode.name()));
+    }
+
+    /// Emit an instruction with one operand byte
+    fn emit_bytes(&mut self, opcode: OpCode, operand: u8, line: usize) {
+        self.function
+            .chunk
+            .write_instruction_with_byte(opcode, operand, line);
+        self.trace(&format!("Emitted: {} {}", opcode.name(), operand));
+    }
+
+    /// Emit an instruction with a 2-byte operand
+    fn emit_short(&mut self, opcode: OpCode, operand: u16, line: usize) {
+        self.function
+            .chunk
+            .write_instruction_with_short(opcode, operand, line);
+        self.trace(&format!("Emitted: {} {}", opcode.name(), operand));
+    }
+
+    /// Get the current chunk for direct access
+    pub fn current_chunk(&mut self) -> &mut Chunk {
+        &mut self.function.chunk
+    }
+
+    // Variable resolution methods
+
+    /// Resolve a local variable by name, returns slot index if found
+    fn resolve_local(&self, name: &str) -> Option<usize> {
+        // Search locals from most recent to oldest (reverse order)
+        for (i, local) in self.locals.iter().enumerate().rev() {
+            if local.name == name && local.depth >= 0 {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Resolve an upvalue by name, returns upvalue index if found
+    fn resolve_upvalue(&mut self, name: &str) -> Option<usize> {
+        // Can't have upvalues in script (top-level)
+        if self.enclosing.is_none() {
+            return None;
+        }
+
+        // Check if we already have this upvalue
+        for (i, upvalue) in self.upvalues.iter().enumerate() {
+            if let Some(enclosing) = &self.enclosing {
+                if upvalue.is_local {
+                    // This upvalue captures a local from the enclosing function
+                    if let Some(local) = enclosing.locals.get(upvalue.index as usize) {
+                        if local.name == name {
+                            return Some(i);
+                        }
+                    }
+                } else {
+                    // This upvalue captures an upvalue from the enclosing function
+                    if let Some(_enclosing_upvalue) = enclosing.upvalues.get(upvalue.index as usize)
+                    {
+                        // We need to recursively check the name - for now, assume it matches
+                        // This is a simplification; a full implementation would track names
+                        return Some(i);
+                    }
+                }
+            }
+        }
+
+        // Try to capture from enclosing scope
+        if let Some(enclosing) = &mut self.enclosing {
+            // First try to find as local in enclosing scope
+            if let Some(local_index) = enclosing.resolve_local(name) {
+                // Mark the local as captured
+                enclosing.locals[local_index].is_captured = true;
+
+                // Add new upvalue that captures this local
+                let upvalue_index = self.add_upvalue(local_index as u8, true);
+                return Some(upvalue_index);
+            }
+
+            // Then try to find as upvalue in enclosing scope
+            if let Some(upvalue_index) = enclosing.resolve_upvalue(name) {
+                // Add new upvalue that captures this upvalue
+                let new_upvalue_index = self.add_upvalue(upvalue_index as u8, false);
+                return Some(new_upvalue_index);
+            }
+        }
+
+        None
+    }
+
+    /// Add an upvalue to the current function
+    fn add_upvalue(&mut self, index: u8, is_local: bool) -> usize {
+        // Check if we already have this upvalue
+        for (i, upvalue) in self.upvalues.iter().enumerate() {
+            if upvalue.index == index && upvalue.is_local == is_local {
+                return i;
+            }
+        }
+
+        // Add new upvalue
+        if self.upvalues.len() >= 256 {
+            // This should be handled as an error, but for now we'll panic
+            panic!("Too many upvalues in function");
+        }
+
+        self.upvalues.push(CompilerUpvalue { index, is_local });
+        self.function.upvalue_count = self.upvalues.len();
+        self.upvalues.len() - 1
+    }
+
+    /// Compile a global variable access
+    fn compile_global_get(&mut self, name: &str) -> Result<(), CompileError> {
+        let name_constant = self.add_constant(Value::string(name.to_string()))?;
+        self.emit_bytes(OpCode::OP_GET_GLOBAL, name_constant as u8, 1);
+        Ok(())
+    }
+
+    /// Compile a global variable definition
+    pub fn compile_global_define(
+        &mut self,
+        name: &str,
+        value_expr: &Expr,
+    ) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling global definition: {}", name));
+
+        // Compile the value expression
+        self.compile_expr(value_expr)?;
+
+        // Emit the define instruction
+        let name_constant = self.add_constant(Value::string(name.to_string()))?;
+        self.emit_bytes(OpCode::OP_DEFINE_GLOBAL, name_constant as u8, 1);
+
+        Ok(())
+    }
+
+    /// Compile a global variable assignment
+    pub fn compile_global_set(
+        &mut self,
+        name: &str,
+        value_expr: &Expr,
+    ) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling global assignment: {}", name));
+
+        // Compile the value expression
+        self.compile_expr(value_expr)?;
+
+        // Emit the set instruction
+        let name_constant = self.add_constant(Value::string(name.to_string()))?;
+        self.emit_bytes(OpCode::OP_SET_GLOBAL, name_constant as u8, 1);
+
+        Ok(())
+    }
+
+    // Scope management methods
+
+    /// Begin a new scope
+    pub fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+        self.trace(&format!("Beginning scope, depth now: {}", self.scope_depth));
+    }
+
+    /// End the current scope and emit instructions to close upvalues if needed
+    pub fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+        self.trace(&format!("Ending scope, depth now: {}", self.scope_depth));
+
+        // Remove locals that are going out of scope
+        while !self.locals.is_empty()
+            && self.locals.last().unwrap().depth > self.scope_depth as isize
+        {
+            let local = self.locals.pop().unwrap();
+
+            // If the local was captured, emit close upvalue instruction
+            if local.is_captured {
+                self.trace(&format!("Closing captured local: {}", local.name));
+                self.emit_byte(OpCode::OP_CLOSE_UPVALUE, 1);
+            } else {
+                // Just pop the value from the stack
+                self.emit_byte(OpCode::OP_POP, 1);
+            }
+        }
+    }
+
+    /// Mark a local variable as captured (used by upvalue resolution)
+    pub fn mark_local_captured(&mut self, local_index: usize) {
+        if local_index < self.locals.len() {
+            self.locals[local_index].is_captured = true;
+            self.trace(&format!(
+                "Marked local '{}' as captured",
+                self.locals[local_index].name
+            ));
+        }
+    }
+
+    /// Get the number of locals in the current scope
+    pub fn local_count(&self) -> usize {
+        self.locals.len()
+    }
+
+    /// Check if we're in global scope
+    pub fn is_global_scope(&self) -> bool {
+        self.scope_depth == 0
+    }
+
+    /// Emit close upvalue instructions for all captured locals at or above the given stack slot
+    pub fn close_upvalues_from(&mut self, stack_slot: usize) {
+        // In a full implementation, this would close all upvalues at or above the given stack slot
+        // For now, we'll emit a single close instruction
+        self.trace(&format!("Closing upvalues from stack slot {}", stack_slot));
+        self.emit_byte(OpCode::OP_CLOSE_UPVALUE, 1);
+    }
+
+    /// Declare a local variable
+    pub fn declare_local(&mut self, name: String) -> Result<(), CompileError> {
+        // Check if we're at global scope
+        if self.scope_depth == 0 {
+            return Ok(()); // Global variables are handled differently
+        }
+
+        // Check for duplicate declaration in current scope
+        for local in self.locals.iter().rev() {
+            if local.depth >= 0 && local.depth < self.scope_depth as isize {
+                break; // We've gone past the current scope
+            }
+            if local.name == name {
+                return Err(CompileError::VariableAlreadyDefined(name));
+            }
+        }
+
+        // Check if we have too many locals
+        if self.locals.len() >= 256 {
+            return Err(CompileError::TooManyLocals);
+        }
+
+        // Add the local variable (uninitialized)
+        self.locals.push(Local {
+            name: name.clone(),
+            depth: -1, // Uninitialized
+            is_captured: false,
+        });
+
+        self.trace(&format!("Declared local variable: {}", name));
+        Ok(())
+    }
+
+    /// Define a local variable (mark it as initialized)
+    pub fn define_local(&mut self) {
+        if self.scope_depth == 0 {
+            return; // Global variables are handled differently
+        }
+
+        if let Some(local) = self.locals.last_mut() {
+            local.depth = self.scope_depth as isize;
+            let name = local.name.clone();
+            let depth = local.depth;
+            self.trace(&format!(
+                "Defined local variable: {} at depth {}",
+                name, depth
+            ));
+        }
+    }
+
+    /// Compile a local variable assignment
+    pub fn compile_local_set(&mut self, name: &str, value_expr: &Expr) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling local assignment: {}", name));
+
+        // Compile the value expression
+        self.compile_expr(value_expr)?;
+
+        // Find the local variable
+        if let Some(local_index) = self.resolve_local(name) {
+            self.emit_bytes(OpCode::OP_SET_LOCAL, local_index as u8, 1);
+            Ok(())
+        } else {
+            Err(CompileError::UndefinedVariable(name.to_string()))
+        }
+    }
+
+    /// Compile a lambda expression
+    fn compile_lambda(&mut self, lambda: &LambdaExpr) -> Result<(), CompileError> {
+        self.trace(&format!(
+            "Compiling lambda with {} parameters",
+            lambda.params.len()
+        ));
+
+        // We need to compile the lambda in a separate function context
+        // For now, let's create a simple implementation that doesn't handle upvalues
+        let function = Function::new(
+            format!("lambda@{}", self.function.chunk.count()),
+            lambda.params.len(),
+        );
+
+        // Create a temporary compiler for the function body
+        let mut temp_compiler = Compiler {
+            function,
+            function_type: FunctionType::Function,
+            locals: Vec::new(),
+            upvalues: Vec::new(),
+            scope_depth: 0,
+            enclosing: None, // Simplified - no upvalue support yet
+            trace_enabled: self.trace_enabled,
+        };
+
+        // Reserve slot 0 for the function itself
+        temp_compiler.locals.push(Local {
+            name: "".to_string(),
+            depth: 0,
+            is_captured: false,
+        });
+
+        // Begin function scope
+        temp_compiler.begin_scope();
+
+        // Declare parameters as local variables
+        for param in &lambda.params {
+            temp_compiler.declare_local(param.clone())?;
+            temp_compiler.define_local();
+        }
+
+        // Compile function body
+        for (i, expr) in lambda.body.iter().enumerate() {
+            temp_compiler.compile_expr(expr)?;
+
+            // Pop intermediate results except for the last expression
+            if i < lambda.body.len() - 1 {
+                temp_compiler.emit_byte(OpCode::OP_POP, 1);
+            }
+        }
+
+        // End function scope
+        temp_compiler.end_scope();
+
+        // Finish compiling the function
+        let compiled_function = temp_compiler.end_compiler();
+
+        // Create closure instruction in the current compiler
+        let function_constant = self.add_constant(Value::function(compiled_function))?;
+        self.emit_bytes(OpCode::OP_CLOSURE, function_constant as u8, 1);
+
+        // No upvalue capture information needed for this simplified implementation
+        // Full upvalue support would require proper compiler nesting
+
+        Ok(())
+    }
+
+    /// Compile a function call
+    fn compile_call(&mut self, func_expr: &Expr, args: &[Expr]) -> Result<(), CompileError> {
+        self.trace(&format!(
+            "Compiling function call with {} arguments",
+            args.len()
+        ));
+
+        // Compile the function expression
+        self.compile_expr(func_expr)?;
+
+        // Compile arguments
+        for arg in args {
+            self.compile_expr(arg)?;
+        }
+
+        // Emit call instruction
+        if args.len() > 255 {
+            return Err(CompileError::TooManyLocals); // Reuse this error for too many args
+        }
+
+        self.emit_bytes(OpCode::OP_CALL, args.len() as u8, 1);
+        Ok(())
+    }
+
+    /// Compile a define expression
+    fn compile_define(&mut self, define: &DefineExpr) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling define: {}", define.name));
+
+        if self.scope_depth > 0 {
+            // Local variable definition
+            self.declare_local(define.name.clone())?;
+            self.compile_expr(&define.value)?;
+            self.define_local();
+            Ok(())
+        } else {
+            // Global variable definition
+            self.compile_global_define(&define.name, &define.value)
+        }
+    }
+
+    /// Finish compilation and return the compiled function
+    pub fn end_compiler(mut self) -> Function {
+        self.trace("Ending compilation");
+
+        // Emit return instruction if not already present
+        if self.function.chunk.code.is_empty()
+            || self.function.chunk.code.last() != Some(&OpCode::OP_RETURN.to_byte())
+        {
+            self.emit_byte(OpCode::OP_RETURN, 1);
+        }
+
+        self.function
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compiler_creation() {
+        let compiler = Compiler::new_script();
+        assert_eq!(compiler.function_type, FunctionType::Script);
+        assert_eq!(compiler.function.name, "script");
+        assert_eq!(compiler.scope_depth, 0);
+        assert_eq!(compiler.locals.len(), 1); // Reserved slot 0
+        assert!(compiler.enclosing.is_none());
+    }
+
+    #[test]
+    fn test_function_compiler_creation() {
+        let script_compiler = Compiler::new_script();
+        let func_compiler =
+            Compiler::new_function("test_func".to_string(), 2, Box::new(script_compiler));
+
+        assert_eq!(func_compiler.function_type, FunctionType::Function);
+        assert_eq!(func_compiler.function.name, "test_func");
+        assert_eq!(func_compiler.function.arity, 2);
+        assert_eq!(func_compiler.locals.len(), 1); // Reserved slot 0
+        assert!(func_compiler.enclosing.is_some());
+    }
+
+    #[test]
+    fn test_compile_number() {
+        let mut compiler = Compiler::new_script();
+        let expr = Expr::Number(42.5);
+
+        compiler.compile_expr(&expr).unwrap();
+
+        // Should have emitted OP_CONSTANT instruction
+        assert_eq!(compiler.function.chunk.code.len(), 2);
+        assert_eq!(
+            compiler.function.chunk.code[0],
+            OpCode::OP_CONSTANT.to_byte()
+        );
+        assert_eq!(compiler.function.chunk.code[1], 0); // Constant index 0
+
+        // Should have added constant to pool
+        assert_eq!(compiler.function.chunk.constants.len(), 1);
+        assert_eq!(compiler.function.chunk.constants[0], Value::Number(42.5));
+    }
+
+    #[test]
+    fn test_compile_string() {
+        let mut compiler = Compiler::new_script();
+        let expr = Expr::String("hello".to_string());
+
+        compiler.compile_expr(&expr).unwrap();
+
+        // Should have emitted OP_CONSTANT instruction
+        assert_eq!(compiler.function.chunk.code.len(), 2);
+        assert_eq!(
+            compiler.function.chunk.code[0],
+            OpCode::OP_CONSTANT.to_byte()
+        );
+        assert_eq!(compiler.function.chunk.code[1], 0); // Constant index 0
+
+        // Should have added string constant to pool
+        assert_eq!(compiler.function.chunk.constants.len(), 1);
+        assert!(compiler.function.chunk.constants[0].is_string());
+        assert_eq!(
+            compiler.function.chunk.constants[0].as_string().unwrap(),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn test_compile_character() {
+        let mut compiler = Compiler::new_script();
+        let expr = Expr::Character('x');
+
+        compiler.compile_expr(&expr).unwrap();
+
+        // Should have emitted OP_CONSTANT instruction
+        assert_eq!(compiler.function.chunk.code.len(), 2);
+        assert_eq!(
+            compiler.function.chunk.code[0],
+            OpCode::OP_CONSTANT.to_byte()
+        );
+
+        // Should have added character constant to pool
+        assert_eq!(compiler.function.chunk.constants.len(), 1);
+        assert!(compiler.function.chunk.constants[0].is_character());
+        assert_eq!(
+            compiler.function.chunk.constants[0].as_character().unwrap(),
+            'x'
+        );
+    }
+
+    #[test]
+    fn test_compile_boolean_true() {
+        let mut compiler = Compiler::new_script();
+        let expr = Expr::Boolean(true);
+
+        compiler.compile_expr(&expr).unwrap();
+
+        // Should have emitted OP_TRUE instruction
+        assert_eq!(compiler.function.chunk.code.len(), 1);
+        assert_eq!(compiler.function.chunk.code[0], OpCode::OP_TRUE.to_byte());
+
+        // Should not have added any constants
+        assert_eq!(compiler.function.chunk.constants.len(), 0);
+    }
+
+    #[test]
+    fn test_compile_boolean_false() {
+        let mut compiler = Compiler::new_script();
+        let expr = Expr::Boolean(false);
+
+        compiler.compile_expr(&expr).unwrap();
+
+        // Should have emitted OP_FALSE instruction
+        assert_eq!(compiler.function.chunk.code.len(), 1);
+        assert_eq!(compiler.function.chunk.code[0], OpCode::OP_FALSE.to_byte());
+
+        // Should not have added any constants
+        assert_eq!(compiler.function.chunk.constants.len(), 0);
+    }
+
+    #[test]
+    fn test_compile_variable_as_global() {
+        let mut compiler = Compiler::new_script();
+        let expr = Expr::Variable("x".to_string());
+
+        // Should now compile successfully as a global variable
+        let result = compiler.compile_expr(&expr);
+        assert!(result.is_ok());
+
+        // Should have emitted OP_GET_GLOBAL instruction
+        assert_eq!(
+            compiler.function.chunk.code[0],
+            OpCode::OP_GET_GLOBAL.to_byte()
+        );
+    }
+
+    #[test]
+    fn test_end_compiler_adds_return() {
+        let mut compiler = Compiler::new_script();
+        compiler.compile_expr(&Expr::Number(42.0)).unwrap();
+
+        let function = compiler.end_compiler();
+
+        // Should have added OP_RETURN at the end
+        let code = &function.chunk.code;
+        assert_eq!(code.last(), Some(&OpCode::OP_RETURN.to_byte()));
+    }
+
+    #[test]
+    fn test_trace_functionality() {
+        let mut compiler = Compiler::new_script();
+
+        // Test enabling/disabling trace
+        assert!(!compiler.trace_enabled);
+        compiler.enable_trace();
+        assert!(compiler.trace_enabled);
+        compiler.disable_trace();
+        assert!(!compiler.trace_enabled);
+    }
+
+    #[test]
+    fn test_multiple_constants() {
+        let mut compiler = Compiler::new_script();
+
+        // Compile multiple literal expressions
+        compiler.compile_expr(&Expr::Number(1.0)).unwrap();
+        compiler
+            .compile_expr(&Expr::String("test".to_string()))
+            .unwrap();
+        compiler.compile_expr(&Expr::Boolean(true)).unwrap();
+        compiler.compile_expr(&Expr::Character('a')).unwrap();
+
+        // Should have correct number of constants (boolean doesn't add constant)
+        assert_eq!(compiler.function.chunk.constants.len(), 3);
+
+        // Check the bytecode sequence
+        let code = &compiler.function.chunk.code;
+        assert_eq!(code[0], OpCode::OP_CONSTANT.to_byte()); // Number
+        assert_eq!(code[1], 0); // Constant index 0
+        assert_eq!(code[2], OpCode::OP_CONSTANT.to_byte()); // String
+        assert_eq!(code[3], 1); // Constant index 1
+        assert_eq!(code[4], OpCode::OP_TRUE.to_byte()); // Boolean true
+        assert_eq!(code[5], OpCode::OP_CONSTANT.to_byte()); // Character
+        assert_eq!(code[6], 2); // Constant index 2
+    }
+
+    #[test]
+    fn test_too_many_constants_error() {
+        let mut compiler = Compiler::new_script();
+
+        // Fill up the constant pool to the limit
+        for i in 0..256 {
+            compiler
+                .function
+                .chunk
+                .add_constant(Value::Number(i as f64));
+        }
+
+        // Try to add one more constant - should fail
+        let result = compiler.compile_expr(&Expr::Number(999.0));
+        assert!(matches!(result, Err(CompileError::TooManyConstants)));
+    }
+
+    #[test]
+    fn test_global_variable_access() {
+        let mut compiler = Compiler::new_script();
+        let expr = Expr::Variable("global_var".to_string());
+
+        compiler.compile_expr(&expr).unwrap();
+
+        // Should have emitted OP_GET_GLOBAL instruction
+        assert_eq!(compiler.function.chunk.code.len(), 2);
+        assert_eq!(
+            compiler.function.chunk.code[0],
+            OpCode::OP_GET_GLOBAL.to_byte()
+        );
+        assert_eq!(compiler.function.chunk.code[1], 0); // Constant index 0
+
+        // Should have added variable name to constants
+        assert_eq!(compiler.function.chunk.constants.len(), 1);
+        assert_eq!(
+            compiler.function.chunk.constants[0].as_string().unwrap(),
+            "global_var"
+        );
+    }
+
+    #[test]
+    fn test_scope_management() {
+        let mut compiler = Compiler::new_script();
+
+        // Begin scope
+        compiler.begin_scope();
+        assert_eq!(compiler.scope_depth, 1);
+
+        // Declare local variable
+        compiler.declare_local("x".to_string()).unwrap();
+        assert_eq!(compiler.locals.len(), 2); // Including reserved slot 0
+        assert_eq!(compiler.locals[1].name, "x");
+        assert_eq!(compiler.locals[1].depth, -1); // Uninitialized
+
+        // Define local variable
+        compiler.define_local();
+        assert_eq!(compiler.locals[1].depth, 1); // Now initialized
+
+        // End scope
+        compiler.end_scope();
+        assert_eq!(compiler.scope_depth, 0);
+        assert_eq!(compiler.locals.len(), 1); // Back to just reserved slot 0
+    }
+
+    #[test]
+    fn test_local_variable_resolution() {
+        let mut compiler = Compiler::new_script();
+
+        // Begin scope and declare local
+        compiler.begin_scope();
+        compiler.declare_local("x".to_string()).unwrap();
+        compiler.define_local();
+
+        // Resolve local variable
+        let local_index = compiler.resolve_local("x");
+        assert_eq!(local_index, Some(1)); // Slot 1 (slot 0 is reserved)
+
+        // Try to resolve non-existent local
+        let missing_local = compiler.resolve_local("y");
+        assert_eq!(missing_local, None);
+
+        compiler.end_scope();
+    }
+
+    #[test]
+    fn test_duplicate_local_declaration() {
+        let mut compiler = Compiler::new_script();
+
+        compiler.begin_scope();
+        compiler.declare_local("x".to_string()).unwrap();
+
+        // Try to declare the same variable again in the same scope
+        let result = compiler.declare_local("x".to_string());
+        assert!(matches!(
+            result,
+            Err(CompileError::VariableAlreadyDefined(_))
+        ));
+
+        compiler.end_scope();
+    }
+
+    #[test]
+    fn test_global_variable_definition() {
+        let mut compiler = Compiler::new_script();
+
+        // Compile global definition: (define x 42)
+        compiler
+            .compile_global_define("x", &Expr::Number(42.0))
+            .unwrap();
+
+        // Should have compiled the value and emitted define instruction
+        let code = &compiler.function.chunk.code;
+        assert_eq!(code[0], OpCode::OP_CONSTANT.to_byte()); // Value (42.0)
+        assert_eq!(code[1], 0); // Constant index 0
+        assert_eq!(code[2], OpCode::OP_DEFINE_GLOBAL.to_byte()); // Define instruction
+        assert_eq!(code[3], 1); // Variable name constant index
+
+        // Should have two constants: the value and the variable name
+        assert_eq!(compiler.function.chunk.constants.len(), 2);
+        assert_eq!(compiler.function.chunk.constants[0], Value::Number(42.0));
+        assert_eq!(
+            compiler.function.chunk.constants[1].as_string().unwrap(),
+            "x"
+        );
+    }
+
+    #[test]
+    fn test_nested_scopes() {
+        let mut compiler = Compiler::new_script();
+
+        // Outer scope
+        compiler.begin_scope();
+        compiler.declare_local("outer".to_string()).unwrap();
+        compiler.define_local();
+
+        // Inner scope
+        compiler.begin_scope();
+        compiler.declare_local("inner".to_string()).unwrap();
+        compiler.define_local();
+
+        // Both variables should be resolvable
+        assert_eq!(compiler.resolve_local("outer"), Some(1));
+        assert_eq!(compiler.resolve_local("inner"), Some(2));
+
+        // End inner scope
+        compiler.end_scope();
+
+        // Only outer variable should be resolvable
+        assert_eq!(compiler.resolve_local("outer"), Some(1));
+        assert_eq!(compiler.resolve_local("inner"), None);
+
+        // End outer scope
+        compiler.end_scope();
+
+        // No local variables should be resolvable
+        assert_eq!(compiler.resolve_local("outer"), None);
+    }
+
+    #[test]
+    fn test_compile_lambda() {
+        use crate::ast::LambdaExpr;
+
+        let mut compiler = Compiler::new_script();
+
+        // Create a simple lambda: (lambda (x) x)
+        let lambda = LambdaExpr {
+            params: vec!["x".to_string()],
+            body: vec![Expr::Variable("x".to_string())],
+        };
+
+        compiler.compile_lambda(&lambda).unwrap();
+
+        // Should have emitted OP_CLOSURE instruction
+        let code = &compiler.function.chunk.code;
+        assert_eq!(code[0], OpCode::OP_CLOSURE.to_byte());
+        assert_eq!(code[1], 0); // Function constant index
+
+        // Should have added function to constants
+        assert_eq!(compiler.function.chunk.constants.len(), 1);
+        assert!(compiler.function.chunk.constants[0].is_function());
+    }
+
+    #[test]
+    fn test_compile_function_call() {
+        let mut compiler = Compiler::new_script();
+
+        // Create a function call: (f 1 2)
+        let call_expr = Expr::Call(
+            Box::new(Expr::Variable("f".to_string())),
+            vec![Expr::Number(1.0), Expr::Number(2.0)],
+        );
+
+        compiler.compile_expr(&call_expr).unwrap();
+
+        let code = &compiler.function.chunk.code;
+
+        // Should compile function expression first
+        assert_eq!(code[0], OpCode::OP_GET_GLOBAL.to_byte()); // Function 'f'
+
+        // Then arguments
+        assert_eq!(code[2], OpCode::OP_CONSTANT.to_byte()); // First arg (1.0)
+        assert_eq!(code[4], OpCode::OP_CONSTANT.to_byte()); // Second arg (2.0)
+
+        // Finally the call
+        assert_eq!(code[6], OpCode::OP_CALL.to_byte());
+        assert_eq!(code[7], 2); // 2 arguments
+    }
+
+    #[test]
+    fn test_compile_define_global() {
+        use crate::ast::DefineExpr;
+
+        let mut compiler = Compiler::new_script();
+
+        // Create a define expression: (define x 42)
+        let define = DefineExpr {
+            name: "x".to_string(),
+            value: Expr::Number(42.0),
+        };
+
+        compiler.compile_define(&define).unwrap();
+
+        let code = &compiler.function.chunk.code;
+
+        // Should compile value first
+        assert_eq!(code[0], OpCode::OP_CONSTANT.to_byte()); // Value (42.0)
+
+        // Then define instruction
+        assert_eq!(code[2], OpCode::OP_DEFINE_GLOBAL.to_byte());
+    }
+
+    #[test]
+    fn test_compile_define_local() {
+        use crate::ast::DefineExpr;
+
+        let mut compiler = Compiler::new_script();
+
+        // Begin scope for local definition
+        compiler.begin_scope();
+
+        // Create a define expression: (define x 42)
+        let define = DefineExpr {
+            name: "x".to_string(),
+            value: Expr::Number(42.0),
+        };
+
+        compiler.compile_define(&define).unwrap();
+
+        let code = &compiler.function.chunk.code;
+
+        // Should compile value first
+        assert_eq!(code[0], OpCode::OP_CONSTANT.to_byte()); // Value (42.0)
+
+        // Should have declared local variable
+        assert_eq!(compiler.locals.len(), 2); // Including reserved slot 0
+        assert_eq!(compiler.locals[1].name, "x");
+        assert_eq!(compiler.locals[1].depth, 1); // Defined at depth 1
+
+        compiler.end_scope();
+    }
+
+    #[test]
+    fn test_captured_local_closing() {
+        let mut compiler = Compiler::new_script();
+
+        // Begin scope and declare local
+        compiler.begin_scope();
+        compiler.declare_local("captured".to_string()).unwrap();
+        compiler.define_local();
+
+        // Mark the local as captured
+        compiler.mark_local_captured(1); // Index 1 (slot 0 is reserved)
+
+        // End scope - should emit OP_CLOSE_UPVALUE
+        compiler.end_scope();
+
+        let code = &compiler.function.chunk.code;
+
+        // Should have emitted OP_CLOSE_UPVALUE instead of OP_POP
+        assert_eq!(code.last(), Some(&OpCode::OP_CLOSE_UPVALUE.to_byte()));
+    }
+
+    #[test]
+    fn test_scope_depth_tracking() {
+        let mut compiler = Compiler::new_script();
+
+        assert_eq!(compiler.scope_depth, 0);
+        assert!(compiler.is_global_scope());
+
+        compiler.begin_scope();
+        assert_eq!(compiler.scope_depth, 1);
+        assert!(!compiler.is_global_scope());
+
+        compiler.begin_scope();
+        assert_eq!(compiler.scope_depth, 2);
+
+        compiler.end_scope();
+        assert_eq!(compiler.scope_depth, 1);
+
+        compiler.end_scope();
+        assert_eq!(compiler.scope_depth, 0);
+        assert!(compiler.is_global_scope());
+    }
+
+    #[test]
+    fn test_local_count() {
+        let mut compiler = Compiler::new_script();
+
+        // Should start with 1 local (reserved slot 0)
+        assert_eq!(compiler.local_count(), 1);
+
+        compiler.begin_scope();
+        compiler.declare_local("x".to_string()).unwrap();
+        compiler.define_local();
+
+        assert_eq!(compiler.local_count(), 2);
+
+        compiler.declare_local("y".to_string()).unwrap();
+        compiler.define_local();
+
+        assert_eq!(compiler.local_count(), 3);
+
+        compiler.end_scope();
+
+        // Should be back to 1 after ending scope
+        assert_eq!(compiler.local_count(), 1);
+    }
+
+    #[test]
+    fn test_mixed_captured_and_regular_locals() {
+        let mut compiler = Compiler::new_script();
+
+        compiler.begin_scope();
+
+        // Declare two locals
+        compiler.declare_local("regular".to_string()).unwrap();
+        compiler.define_local();
+
+        compiler.declare_local("captured".to_string()).unwrap();
+        compiler.define_local();
+
+        // Mark only the second one as captured
+        compiler.mark_local_captured(2); // Index 2
+
+        compiler.end_scope();
+
+        let code = &compiler.function.chunk.code;
+
+        // Should have emitted OP_CLOSE_UPVALUE for captured, then OP_POP for regular
+        // (in reverse order since we pop from the end)
+        let len = code.len();
+        assert_eq!(code[len - 2], OpCode::OP_CLOSE_UPVALUE.to_byte()); // For captured local
+        assert_eq!(code[len - 1], OpCode::OP_POP.to_byte()); // For regular local
+    }
+}

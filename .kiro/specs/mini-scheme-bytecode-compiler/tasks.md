@@ -156,31 +156,31 @@
   - Test nested closures and upvalue sharing
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8_
 
-- [ ] 6. Create bytecode compiler from AST
+- [x] 6. Create bytecode compiler from AST
   - Implement compiler that transforms AST nodes to bytecode
   - Add variable resolution for locals, globals, and upvalues
   - Implement proper scope management and upvalue capture detection
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10_
 
-- [ ] 6.1 Create compiler structure and basic compilation
+- [x] 6.1 Create compiler structure and basic compilation
   - Implement Compiler struct with function and scope tracking
   - Add methods to compile literal expressions to bytecode
   - Implement basic expression compilation (numbers, strings, booleans)
   - _Requirements: 2.1, 2.4_
 
-- [ ] 6.2 Implement variable resolution system
+- [x] 6.2 Implement variable resolution system
   - Add local variable tracking and resolution
   - Implement global variable compilation
   - Create upvalue resolution with recursive scope lookup
   - _Requirements: 2.2, 2.9_
 
-- [ ] 6.3 Add function and closure compilation
+- [x] 6.3 Add function and closure compilation
   - Implement lambda expression compilation
   - Add upvalue capture detection and marking
   - Generate OP_CLOSURE instructions with upvalue metadata
   - _Requirements: 2.5, 2.9, 2.10_
 
-- [ ] 6.4 Implement scope management
+- [x] 6.4 Implement scope management
   - Add scope depth tracking and local variable management
   - Implement proper variable lifetime and capture detection
   - Generate OP_CLOSE_UPVALUE instructions at scope boundaries

@@ -18,4 +18,9 @@ path = "bin/lexer/main.rs"
 name = "parser"
 path = "bin/parser/main.rs"
 
+# Compiler-only binary
+[[bin]]
+name = "compiler"
+path = "bin/compiler/main.rs"
+
 [dependencies]
