@@ -841,6 +841,18 @@ impl Compiler {
                     self.emit_byte(OpCode::OP_CDR, 1);
                     return Ok(());
                 }
+                "list" => {
+                    // Build a list from the arguments by generating nested cons calls
+                    // (list a b c) => (cons a (cons b (cons c nil)))
+                    if args.is_empty() {
+                        // Empty list
+                        self.emit_byte(OpCode::OP_NIL, 1);
+                    } else {
+                        // Build the nested structure recursively
+                        self.compile_list_helper(args, 0)?;
+                    }
+                    return Ok(());
+                }
                 "vector" => {
                     if args.len() > 255 {
                         return Err(CompileError::TooManyLocals); // Reuse this error for too many args
@@ -1524,23 +1536,74 @@ impl Compiler {
                 if elements.is_empty() {
                     Ok(Value::Nil)
                 } else {
-                    // For now, convert to a simple list representation
-                    // A full implementation would build proper cons cells
-                    Ok(Value::Nil) // Simplified
+                    // Build proper cons cells from right to left
+                    self.build_list_value(elements)
                 }
             }
 
-            Expr::Vector(_elements) => {
-                // Convert elements to values (simplified)
-                Ok(Value::vector(vec![])) // Simplified for now
+            Expr::Vector(elements) => {
+                // Convert elements to values and create vector
+                let mut values = Vec::new();
+                for element in elements {
+                    values.push(self.expr_to_value(element)?);
+                }
+                Ok(Value::vector(values))
+            }
+
+            // Handle nested quotes
+            Expr::Quote(quoted) => {
+                // Nested quote: '(quote x) => (quote x)
+                let quoted_value = self.expr_to_value(quoted)?;
+                let quote_symbol = Value::symbol("quote".to_string());
+                Ok(Value::cons(quote_symbol, Value::cons(quoted_value, Value::Nil)))
+            }
+
+            // Handle function calls in quoted context (they become lists)
+            Expr::Call(func, args) => {
+                // In a quoted context, (f a b c) becomes a list (f a b c)
+                let mut elements = vec![*func.clone()];
+                elements.extend(args.clone());
+                self.build_list_value(&elements)
             }
 
             _ => {
-                // For complex expressions, we can't easily convert to values
-                // Return nil for now
-                Ok(Value::Nil)
+                // For complex expressions that can't be converted to literal values,
+                // we need to handle them as symbols or return an error
+                Err(CompileError::InvalidOperation(format!(
+                    "Cannot convert expression to quoted value: {:?}",
+                    expr
+                )))
             }
         }
+    }
+
+    /// Build a proper list value from a vector of expressions
+    fn build_list_value(&self, elements: &[Expr]) -> Result<Value, CompileError> {
+        if elements.is_empty() {
+            return Ok(Value::Nil);
+        }
+
+        // Build the list from right to left (tail to head)
+        let mut result = Value::Nil;
+        for element in elements.iter().rev() {
+            let element_value = self.expr_to_value(element)?;
+            result = Value::cons(element_value, result);
+        }
+        Ok(result)
+    }
+
+    /// Helper method to compile list construction recursively
+    fn compile_list_helper(&mut self, args: &[Expr], index: usize) -> Result<(), CompileError> {
+        if index >= args.len() {
+            // Base case: emit nil
+            self.emit_byte(OpCode::OP_NIL, 1);
+        } else {
+            // Recursive case: (cons args[index] (list args[index+1]...))
+            self.compile_expr(&args[index])?; // Push car
+            self.compile_list_helper(args, index + 1)?; // Push cdr (recursive list)
+            self.emit_byte(OpCode::OP_CONS, 1); // Cons them together
+        }
+        Ok(())
     }
 }
 
