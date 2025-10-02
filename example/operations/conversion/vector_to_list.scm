@@ -3,3 +3,4 @@
 (define my-list (vector->list vec))
 (display my-list)
 (newline)
+;=> (1 2 3)

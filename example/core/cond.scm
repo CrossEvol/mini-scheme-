@@ -1,1 +1,2 @@
 (cond ((> 5 3) "yes") ((< 5 3) "no") (else "equal"))
+;=> "yes"

@@ -1,1 +1,2 @@
 (list->string '(#\h #\e #\l #\l #\o))
+;=> "hello"

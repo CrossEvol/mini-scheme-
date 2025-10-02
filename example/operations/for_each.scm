@@ -1,1 +1,4 @@
 (for-each (lambda (x) (display x) (newline)) '(1 2 3))
+;=> 1
+;2
+;3

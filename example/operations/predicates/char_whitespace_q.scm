@@ -1,1 +1,2 @@
 (char-whitespace? #\space)
+;=> #t

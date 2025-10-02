@@ -1,1 +1,2 @@
 (call-with-values (lambda () (values 1 2)) (lambda (x y) (+ x y)))
+;=> 3 
