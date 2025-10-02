@@ -1432,7 +1432,7 @@ impl Compiler {
             Expr::String(s) => Ok(Value::string(s.clone())),
             Expr::Character(c) => Ok(Value::character(*c)),
             Expr::Boolean(b) => Ok(Value::Boolean(*b)),
-            Expr::Variable(name) => Ok(Value::string(name.clone())), // Symbols as strings for now
+            Expr::Variable(name) => Ok(Value::symbol(name.clone())), // Symbols
             
             Expr::List(elements) => {
                 if elements.is_empty() {

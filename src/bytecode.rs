@@ -481,6 +481,7 @@ impl Disassembler {
                     match &*obj_ref {
                         crate::object::Object::String(s) => print!("\"{}\"", s),
                         crate::object::Object::Character(c) => print!("#\\{}", c),
+                        crate::object::Object::Symbol(s) => print!("{}", s),
                         crate::object::Object::Function(f) => print!("<fn {}>", f.name),
                         crate::object::Object::Closure(_) => print!("<closure>"),
                         crate::object::Object::Cons(_) => print!("<cons>"),
@@ -548,6 +549,7 @@ impl Disassembler {
                     match &*obj_ref {
                         crate::object::Object::String(s) => format!("\"{}\"", s),
                         crate::object::Object::Character(c) => format!("#\\{}", c),
+                        crate::object::Object::Symbol(s) => s.clone(),
                         crate::object::Object::Function(f) => format!("<fn {}>", f.name),
                         crate::object::Object::Closure(_) => "<closure>".to_string(),
                         crate::object::Object::Cons(_) => "<cons>".to_string(),

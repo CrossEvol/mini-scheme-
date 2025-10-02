@@ -20,12 +20,12 @@ pub use parser::Parser;
 pub use token::{Token, TokenInfo};
 pub use vm::{RuntimeError, VM};
 
+use error::{ErrorContext, ErrorReporter, MiniSchemeError};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::process;
 use trace::{TraceConfig, Tracer};
-use error::{ErrorContext, ErrorReporter, MiniSchemeError};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -114,7 +114,14 @@ fn main() {
     } else {
         // Process file
         let filename = filename.unwrap();
-        process_file_with_config(&filename, trace_config, show_tokens, show_ast, show_bytecode, execute);
+        process_file_with_config(
+            &filename,
+            trace_config,
+            show_tokens,
+            show_ast,
+            show_bytecode,
+            execute,
+        );
     }
 }
 
@@ -137,21 +144,38 @@ fn print_usage(program_name: &str) {
     eprintln!("  -ta, --trace-all        Enable all tracing");
     eprintln!();
     eprintln!("Examples:");
-    eprintln!("  {} program.scm          Compile and run program.scm", program_name);
-    eprintln!("  {} --all program.scm    Show all phases for program.scm", program_name);
-    eprintln!("  {} --trace-all prog.scm Trace compilation and execution", program_name);
+    eprintln!(
+        "  {} program.scm          Compile and run program.scm",
+        program_name
+    );
+    eprintln!(
+        "  {} --all program.scm    Show all phases for program.scm",
+        program_name
+    );
+    eprintln!(
+        "  {} --trace-all prog.scm Trace compilation and execution",
+        program_name
+    );
     eprintln!("  {}                      Start REPL", program_name);
 }
 
 fn process_file_with_config(
-    filename: &str, 
+    filename: &str,
     trace_config: TraceConfig,
     show_tokens: bool,
-    show_ast: bool, 
+    show_ast: bool,
     show_bytecode: bool,
-    execute: bool
+    execute: bool,
 ) {
-    println!("Processing file: {}", filename);
+    // Only show "Processing file:" when debugging modes are enabled
+    if show_tokens
+        || show_ast
+        || show_bytecode
+        || trace_config.compilation
+        || trace_config.execution
+    {
+        println!("Processing file: {}", filename);
+    }
 
     // Read the input file
     let input = match fs::read_to_string(filename) {
@@ -166,7 +190,15 @@ fn process_file_with_config(
         }
     };
 
-    if let Err(error) = process_input_with_config_result(&input, Some(filename), trace_config, show_tokens, show_ast, show_bytecode, execute) {
+    if let Err(error) = process_input_with_config_result(
+        &input,
+        Some(filename),
+        trace_config,
+        show_tokens,
+        show_ast,
+        show_bytecode,
+        execute,
+    ) {
         let error_reporter = ErrorReporter::new();
         error_reporter.report_error(&error, None);
         process::exit(1);
@@ -181,7 +213,15 @@ fn process_input_with_config(
     show_bytecode: bool,
     execute: bool,
 ) {
-    if let Err(error) = process_input_with_config_result(input, None, trace_config, show_tokens, show_ast, show_bytecode, execute) {
+    if let Err(error) = process_input_with_config_result(
+        input,
+        None,
+        trace_config,
+        show_tokens,
+        show_ast,
+        show_bytecode,
+        execute,
+    ) {
         let error_reporter = ErrorReporter::new();
         error_reporter.report_error(&error, None);
     }
@@ -203,7 +243,12 @@ fn process_input_with_config_result(
     let mut lexer = Lexer::new(input);
     let tokens = lexer.tokenize().map_err(|err| {
         let context = ErrorContext::new(filename.map(|s| s.to_string()), err.line(), err.column())
-            .with_source_line(input_lines.get(err.line().saturating_sub(1)).unwrap_or(&"").to_string())
+            .with_source_line(
+                input_lines
+                    .get(err.line().saturating_sub(1))
+                    .unwrap_or(&"")
+                    .to_string(),
+            )
             .with_context("tokenizing source code".to_string());
         error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
         err
@@ -225,9 +270,14 @@ fn process_input_with_config_result(
         } else {
             (input_lines.len(), 1)
         };
-        
+
         let context = ErrorContext::new(filename.map(|s| s.to_string()), line, column)
-            .with_source_line(input_lines.get(line.saturating_sub(1)).unwrap_or(&"").to_string())
+            .with_source_line(
+                input_lines
+                    .get(line.saturating_sub(1))
+                    .unwrap_or(&"")
+                    .to_string(),
+            )
             .with_context("parsing source code".to_string());
         error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
         err
@@ -273,21 +323,28 @@ fn process_input_with_config_result(
         }
 
         let mut vm = VM::new();
-        
+
         // Set up tracing if requested
         if trace_config.execution {
             let tracer = Tracer::new(trace_config);
             vm.set_tracer(tracer);
         }
 
-        vm.interpret(&function.chunk).map_err(|err| {
-            let context = ErrorContext::new(filename.map(|s| s.to_string()), 1, 1)
-                .with_context("executing bytecode".to_string());
-            error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
-            err
-        }).map(|result| {
-            println!("Result: {:?}", result);
-        })?;
+        vm.interpret(&function.chunk)
+            .map_err(|err| {
+                let context = ErrorContext::new(filename.map(|s| s.to_string()), 1, 1)
+                    .with_context("executing bytecode".to_string());
+                error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
+                err
+            })
+            .map(|result| {
+                // Only show "Result:" prefix when debugging modes are enabled
+                if show_tokens || show_ast || show_bytecode {
+                    println!("Result: {}", result);
+                } else {
+                    println!("{}", result);
+                }
+            })?;
     }
 
     if !show_tokens && !show_ast && !show_bytecode && !execute {
@@ -400,7 +457,14 @@ fn repl_with_config(mut trace_config: TraceConfig) {
                     }
                     ":trace-compilation" => {
                         trace_config.compilation = !trace_config.compilation;
-                        println!("Compilation tracing: {}", if trace_config.compilation { "on" } else { "off" });
+                        println!(
+                            "Compilation tracing: {}",
+                            if trace_config.compilation {
+                                "on"
+                            } else {
+                                "off"
+                            }
+                        );
                         continue;
                     }
                     ":trace-execution" => {
@@ -409,11 +473,21 @@ fn repl_with_config(mut trace_config: TraceConfig) {
                         trace_config.upvalue_operations = trace_config.execution;
                         trace_config.function_calls = trace_config.execution;
                         trace_config.variable_access = trace_config.execution;
-                        println!("Execution tracing: {}", if trace_config.execution { "on" } else { "off" });
+                        println!(
+                            "Execution tracing: {}",
+                            if trace_config.execution { "on" } else { "off" }
+                        );
                         continue;
                     }
                     _ => {
-                        process_input_with_config(input, trace_config.clone(), show_tokens, show_ast, show_bytecode, execute);
+                        process_input_with_config(
+                            input,
+                            trace_config.clone(),
+                            show_tokens,
+                            show_ast,
+                            show_bytecode,
+                            execute,
+                        );
                     }
                 }
             }

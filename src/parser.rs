@@ -131,7 +131,7 @@ impl Parser {
             Token::Character(c) => Ok(Expr::Character(*c)),
             Token::Boolean(b) => Ok(Expr::Boolean(*b)),
             Token::Identifier(name) => Ok(Expr::Variable(name.clone())),
-            Token::Null => Ok(Expr::List(vec![])), // null is represented as empty list
+            Token::Null => Ok(Expr::Variable("null".to_string())), // null is a symbol
 
             // Handle built-in procedures and keywords as variables for now
             Token::Plus => Ok(Expr::Variable("+".to_string())),

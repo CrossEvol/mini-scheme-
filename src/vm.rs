@@ -224,6 +224,7 @@ impl VM {
                     match &*obj_ref {
                         Object::String(s) => print!("\"{}\"", s),
                         Object::Character(c) => print!("#\\{}", c),
+                        Object::Symbol(s) => print!("{}", s),
                         Object::Function(f) => print!("<fn {}>", f.name),
                         Object::Closure(_) => print!("<closure>"),
                         Object::Cons(_) => print!("<cons>"),
@@ -1028,6 +1029,7 @@ impl VM {
                     match &*obj_ref {
                         Object::String(s) => format!("\"{}\"", s),
                         Object::Character(c) => format!("#\\{}", c),
+                        Object::Symbol(s) => s.clone(),
                         Object::Function(f) => format!("<fn {}>", f.name),
                         Object::Closure(_) => "<closure>".to_string(),
                         Object::Cons(_) => "<cons>".to_string(),
@@ -1330,6 +1332,7 @@ impl VM {
                     match &*obj_ref {
                         Object::String(_) => "string".to_string(),
                         Object::Character(_) => "character".to_string(),
+                        Object::Symbol(_) => "symbol".to_string(),
                         Object::Cons(_) => "cons".to_string(),
                         Object::Vector(_) => "vector".to_string(),
                         Object::Hashtable(_) => "hashtable".to_string(),

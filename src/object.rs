@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::fmt;
 use crate::bytecode::Chunk;
 
 /// The fundamental Value type that represents all Scheme values
@@ -17,6 +18,7 @@ pub enum Value {
 pub enum Object {
     String(String),
     Character(char),
+    Symbol(String),
     Cons(Cons),
     Vector(Vec<Value>),
     Hashtable(HashMap<String, Value>),
@@ -155,6 +157,11 @@ impl Value {
         Value::Object(Rc::new(RefCell::new(Object::Character(c))))
     }
 
+    /// Create a new symbol value
+    pub fn symbol(name: String) -> Self {
+        Value::Object(Rc::new(RefCell::new(Object::Symbol(name))))
+    }
+
     /// Create a new cons cell value
     pub fn cons(car: Value, cdr: Value) -> Self {
         Value::Object(Rc::new(RefCell::new(Object::Cons(Cons::new(car, cdr)))))
@@ -209,6 +216,14 @@ impl Value {
     pub fn is_character(&self) -> bool {
         match self {
             Value::Object(obj) => matches!(*obj.borrow(), Object::Character(_)),
+            _ => false,
+        }
+    }
+
+    /// Check if this value is a symbol
+    pub fn is_symbol(&self) -> bool {
+        match self {
+            Value::Object(obj) => matches!(*obj.borrow(), Object::Symbol(_)),
             _ => false,
         }
     }
@@ -302,6 +317,19 @@ impl Value {
         }
     }
 
+    /// Extract symbol value, returns None if not a symbol
+    pub fn as_symbol(&self) -> Option<String> {
+        match self {
+            Value::Object(obj) => {
+                match &*obj.borrow() {
+                    Object::Symbol(s) => Some(s.clone()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Extract cons cell, returns None if not a cons
     pub fn as_cons(&self) -> Option<Cons> {
         match self {
@@ -372,6 +400,74 @@ impl PartialEq for Value {
 
 impl Eq for Value {}
 
+/// Display implementation for Value to show Scheme-like output
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Number(n) => {
+                // Display integers without decimal point, floats with decimal
+                if n.fract() == 0.0 {
+                    write!(f, "{}", *n as i64)
+                } else {
+                    write!(f, "{}", n)
+                }
+            }
+            Value::Boolean(true) => write!(f, "#t"),
+            Value::Boolean(false) => write!(f, "#f"),
+            Value::Nil => write!(f, "()"),
+            Value::Object(obj) => {
+                match &*obj.borrow() {
+                    Object::String(s) => write!(f, "\"{}\"", s),
+                    Object::Character(c) => write!(f, "#\\{}", c),
+                    Object::Symbol(s) => write!(f, "{}", s),
+                    Object::Cons(cons) => {
+                        write!(f, "(")?;
+                        self.display_list(f, cons)?;
+                        write!(f, ")")
+                    }
+                    Object::Vector(vec) => {
+                        write!(f, "#(")?;
+                        for (i, val) in vec.iter().enumerate() {
+                            if i > 0 { write!(f, " ")?; }
+                            write!(f, "{}", val)?;
+                        }
+                        write!(f, ")")
+                    }
+                    Object::Hashtable(_) => write!(f, "#<hashtable>"),
+                    Object::Function(func) => write!(f, "#<function:{}>", func.name),
+                    Object::Closure(closure) => write!(f, "#<closure:{}>", closure.function.name),
+                    Object::Upvalue(_) => write!(f, "#<upvalue>"),
+                }
+            }
+        }
+    }
+}
+
+impl Value {
+    /// Helper method to display lists properly
+    fn display_list(&self, f: &mut fmt::Formatter<'_>, cons: &Cons) -> fmt::Result {
+        write!(f, "{}", cons.car)?;
+        
+        match &cons.cdr {
+            Value::Nil => Ok(()),
+            Value::Object(obj) => {
+                match &*obj.borrow() {
+                    Object::Cons(next_cons) => {
+                        write!(f, " ")?;
+                        self.display_list(f, next_cons)
+                    }
+                    _ => {
+                        write!(f, " . {}", cons.cdr)
+                    }
+                }
+            }
+            _ => {
+                write!(f, " . {}", cons.cdr)
+            }
+        }
+    }
+}
+
 /// Implement equality comparison for values
 impl Value {
     /// Scheme eq? predicate - reference equality for objects, value equality for immediates
@@ -389,6 +485,7 @@ impl Value {
                 match (&*a.borrow(), &*b.borrow()) {
                     (Object::String(s1), Object::String(s2)) => s1 == s2,
                     (Object::Character(c1), Object::Character(c2)) => c1 == c2,
+                    (Object::Symbol(s1), Object::Symbol(s2)) => s1 == s2,
                     (Object::Cons(cons1), Object::Cons(cons2)) => {
                         cons1.car.equal(&cons2.car) && cons1.cdr.equal(&cons2.cdr)
                     }
