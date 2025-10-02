@@ -58,6 +58,23 @@ pub enum OpCode {
     OP_CDR = 31,         // Get cdr of cons cell
     OP_VECTOR = 32,      // Create vector from stack values
     OP_MAKE_HASHTABLE = 33, // Create hashtable
+    
+    // Type predicate operations
+    OP_NULL_Q = 34,      // null? predicate
+    OP_PAIR_Q = 35,      // pair? predicate
+    OP_NUMBER_Q = 36,    // number? predicate
+    OP_STRING_Q = 37,    // string? predicate
+    OP_BOOLEAN_Q = 38,   // boolean? predicate
+    OP_CHAR_Q = 39,      // char? predicate
+    
+    // Comparison operations
+    OP_EQ_Q = 40,        // eq? predicate
+    OP_STRING_EQ_Q = 41, // string=? predicate
+    OP_CHAR_EQ_Q = 42,   // char=? predicate
+    
+    // Character predicates
+    OP_CHAR_NUMERIC_Q = 43,    // char-numeric? predicate
+    OP_CHAR_WHITESPACE_Q = 44, // char-whitespace? predicate
 }
 
 impl OpCode {
@@ -98,6 +115,17 @@ impl OpCode {
             31 => Some(OpCode::OP_CDR),
             32 => Some(OpCode::OP_VECTOR),
             33 => Some(OpCode::OP_MAKE_HASHTABLE),
+            34 => Some(OpCode::OP_NULL_Q),
+            35 => Some(OpCode::OP_PAIR_Q),
+            36 => Some(OpCode::OP_NUMBER_Q),
+            37 => Some(OpCode::OP_STRING_Q),
+            38 => Some(OpCode::OP_BOOLEAN_Q),
+            39 => Some(OpCode::OP_CHAR_Q),
+            40 => Some(OpCode::OP_EQ_Q),
+            41 => Some(OpCode::OP_STRING_EQ_Q),
+            42 => Some(OpCode::OP_CHAR_EQ_Q),
+            43 => Some(OpCode::OP_CHAR_NUMERIC_Q),
+            44 => Some(OpCode::OP_CHAR_WHITESPACE_Q),
             _ => None,
         }
     }
@@ -117,7 +145,10 @@ impl OpCode {
             OpCode::OP_MULTIPLY | OpCode::OP_DIVIDE | OpCode::OP_NOT |
             OpCode::OP_NEGATE | OpCode::OP_PRINT | OpCode::OP_RETURN |
             OpCode::OP_CONS | OpCode::OP_CAR | OpCode::OP_CDR |
-            OpCode::OP_MAKE_HASHTABLE => 1,
+            OpCode::OP_MAKE_HASHTABLE | OpCode::OP_NULL_Q | OpCode::OP_PAIR_Q |
+            OpCode::OP_NUMBER_Q | OpCode::OP_STRING_Q | OpCode::OP_BOOLEAN_Q |
+            OpCode::OP_CHAR_Q | OpCode::OP_EQ_Q | OpCode::OP_STRING_EQ_Q |
+            OpCode::OP_CHAR_EQ_Q | OpCode::OP_CHAR_NUMERIC_Q | OpCode::OP_CHAR_WHITESPACE_Q => 1,
 
             // Instructions with 1-byte operand (2 bytes total)
             OpCode::OP_CONSTANT | OpCode::OP_GET_LOCAL | OpCode::OP_SET_LOCAL |
@@ -180,6 +211,17 @@ impl OpCode {
             OpCode::OP_CDR => "OP_CDR",
             OpCode::OP_VECTOR => "OP_VECTOR",
             OpCode::OP_MAKE_HASHTABLE => "OP_MAKE_HASHTABLE",
+            OpCode::OP_NULL_Q => "OP_NULL_Q",
+            OpCode::OP_PAIR_Q => "OP_PAIR_Q",
+            OpCode::OP_NUMBER_Q => "OP_NUMBER_Q",
+            OpCode::OP_STRING_Q => "OP_STRING_Q",
+            OpCode::OP_BOOLEAN_Q => "OP_BOOLEAN_Q",
+            OpCode::OP_CHAR_Q => "OP_CHAR_Q",
+            OpCode::OP_EQ_Q => "OP_EQ_Q",
+            OpCode::OP_STRING_EQ_Q => "OP_STRING_EQ_Q",
+            OpCode::OP_CHAR_EQ_Q => "OP_CHAR_EQ_Q",
+            OpCode::OP_CHAR_NUMERIC_Q => "OP_CHAR_NUMERIC_Q",
+            OpCode::OP_CHAR_WHITESPACE_Q => "OP_CHAR_WHITESPACE_Q",
         }
     }
 }
@@ -357,7 +399,10 @@ impl Disassembler {
             OpCode::OP_MULTIPLY | OpCode::OP_DIVIDE | OpCode::OP_NOT |
             OpCode::OP_NEGATE | OpCode::OP_PRINT | OpCode::OP_RETURN |
             OpCode::OP_CONS | OpCode::OP_CAR | OpCode::OP_CDR |
-            OpCode::OP_MAKE_HASHTABLE => {
+            OpCode::OP_MAKE_HASHTABLE | OpCode::OP_NULL_Q | OpCode::OP_PAIR_Q |
+            OpCode::OP_NUMBER_Q | OpCode::OP_STRING_Q | OpCode::OP_BOOLEAN_Q |
+            OpCode::OP_CHAR_Q | OpCode::OP_EQ_Q | OpCode::OP_STRING_EQ_Q |
+            OpCode::OP_CHAR_EQ_Q | OpCode::OP_CHAR_NUMERIC_Q | OpCode::OP_CHAR_WHITESPACE_Q => {
                 self.simple_instruction(opcode.name(), offset)
             }
 

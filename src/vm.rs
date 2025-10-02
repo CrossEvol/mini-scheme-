@@ -741,6 +741,134 @@ impl VM {
                     Ok(())
                 }
 
+                OpCode::OP_NULL_Q => {
+                    let value = self.pop()?;
+                    let result = matches!(value, Value::Nil);
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_PAIR_Q => {
+                    let value = self.pop()?;
+                    let result = value.is_cons();
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_NUMBER_Q => {
+                    let value = self.pop()?;
+                    let result = value.is_number();
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_STRING_Q => {
+                    let value = self.pop()?;
+                    let result = value.is_string();
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_BOOLEAN_Q => {
+                    let value = self.pop()?;
+                    let result = value.is_boolean();
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_CHAR_Q => {
+                    let value = self.pop()?;
+                    let result = value.is_character();
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_EQ_Q => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    let result = a.eq(&b);
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_STRING_EQ_Q => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    let result = match (&a, &b) {
+                        (Value::Object(obj_a), Value::Object(obj_b)) => {
+                            if let (Ok(ref_a), Ok(ref_b)) = (obj_a.try_borrow(), obj_b.try_borrow()) {
+                                match (&*ref_a, &*ref_b) {
+                                    (Object::String(s1), Object::String(s2)) => s1 == s2,
+                                    _ => false,
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_CHAR_EQ_Q => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    let result = match (&a, &b) {
+                        (Value::Object(obj_a), Value::Object(obj_b)) => {
+                            if let (Ok(ref_a), Ok(ref_b)) = (obj_a.try_borrow(), obj_b.try_borrow()) {
+                                match (&*ref_a, &*ref_b) {
+                                    (Object::Character(c1), Object::Character(c2)) => c1 == c2,
+                                    _ => false,
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_CHAR_NUMERIC_Q => {
+                    let value = self.pop()?;
+                    let result = match &value {
+                        Value::Object(obj) => {
+                            if let Ok(obj_ref) = obj.try_borrow() {
+                                match &*obj_ref {
+                                    Object::Character(c) => c.is_ascii_digit(),
+                                    _ => false,
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
+                OpCode::OP_CHAR_WHITESPACE_Q => {
+                    let value = self.pop()?;
+                    let result = match &value {
+                        Value::Object(obj) => {
+                            if let Ok(obj_ref) = obj.try_borrow() {
+                                match &*obj_ref {
+                                    Object::Character(c) => c.is_whitespace(),
+                                    _ => false,
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
                 _ => Err(RuntimeError::InvalidOperation(format!(
                     "Unimplemented opcode: {:?}",
                     opcode

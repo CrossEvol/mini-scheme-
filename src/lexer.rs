@@ -223,6 +223,14 @@ impl Lexer {
             "error" => Token::Error,
             "values" => Token::Values,
             "for-each" => Token::ForEach,
+            
+            // Type Predicates
+            "null?" => Token::NullQ,
+            "pair?" => Token::PairQ,
+            "number?" => Token::NumberQ,
+            "string?" => Token::StringQ,
+            "boolean?" => Token::BooleanQ,
+            "char?" => Token::CharQ,
 
             // Hashtable Operations
             "make-hashtable" => Token::MakeHashtable,
@@ -237,14 +245,8 @@ impl Lexer {
             // Predicates
             "equal?" => Token::EqualQ,
             "hashtable?" => Token::HashtableQ,
-            "string?" => Token::StringQ,
-            "number?" => Token::NumberQ,
-            "boolean?" => Token::BooleanQ,
-            "char?" => Token::CharQ,
             "char-numeric?" => Token::CharNumericQ,
             "char-whitespace?" => Token::CharWhitespaceQ,
-            "null?" => Token::NullQ,
-            "pair?" => Token::PairQ,
             "eq?" => Token::EqQ,
             "char=?" => Token::CharEqQ,
             "string=?" => Token::StringEqQ,

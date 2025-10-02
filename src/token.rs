@@ -40,6 +40,14 @@ pub enum Token {
     Values,
     ForEach,
     
+    // Type Predicates
+    NullQ,      // null?
+    PairQ,      // pair?
+    NumberQ,    // number?
+    StringQ,    // string?
+    BooleanQ,   // boolean?
+    CharQ,      // char?
+    
     // Hashtable Operations
     MakeHashtable,   // make-hashtable
     HashtableSet,    // hashtable-set!
@@ -55,14 +63,8 @@ pub enum Token {
     
     // Predicates
     HashtableQ,     // hashtable?
-    StringQ,        // string?
-    NumberQ,        // number?
-    BooleanQ,       // boolean?
-    CharQ,          // char?
     CharNumericQ,   // char-numeric?
     CharWhitespaceQ, // char-whitespace?
-    NullQ,          // null?
-    PairQ,          // pair?
     EqQ,            // eq?
     CharEqQ,        // char=?
     StringEqQ,      // string=?
@@ -177,6 +179,8 @@ impl TokenInfo {
             self.token,
             Token::Car | Token::Cdr | Token::Cons | Token::List | Token::Vector
             | Token::Display | Token::Error | Token::Values | Token::ForEach
+            | Token::NullQ | Token::PairQ | Token::NumberQ | Token::StringQ 
+            | Token::BooleanQ | Token::CharQ
             | Token::MakeHashtable | Token::HashtableSet | Token::HashtableRef | Token::HashtableDelete
             | Token::StringHash | Token::EqualHash | Token::EqualQ
             | Token::Plus | Token::Minus | Token::Multiply | Token::Divide
@@ -234,6 +238,14 @@ impl fmt::Display for Token {
             Token::Values => write!(f, "values"),
             Token::ForEach => write!(f, "for-each"),
             
+            // Type Predicates
+            Token::NullQ => write!(f, "null?"),
+            Token::PairQ => write!(f, "pair?"),
+            Token::NumberQ => write!(f, "number?"),
+            Token::StringQ => write!(f, "string?"),
+            Token::BooleanQ => write!(f, "boolean?"),
+            Token::CharQ => write!(f, "char?"),
+            
             // Hashtable Operations
             Token::MakeHashtable => write!(f, "make-hashtable"),
             Token::HashtableSet => write!(f, "hashtable-set!"),
@@ -249,14 +261,8 @@ impl fmt::Display for Token {
             
             // Predicates
             Token::HashtableQ => write!(f, "hashtable?"),
-            Token::StringQ => write!(f, "string?"),
-            Token::NumberQ => write!(f, "number?"),
-            Token::BooleanQ => write!(f, "boolean?"),
-            Token::CharQ => write!(f, "char?"),
             Token::CharNumericQ => write!(f, "char-numeric?"),
             Token::CharWhitespaceQ => write!(f, "char-whitespace?"),
-            Token::NullQ => write!(f, "null?"),
-            Token::PairQ => write!(f, "pair?"),
             Token::EqQ => write!(f, "eq?"),
             Token::CharEqQ => write!(f, "char=?"),
             Token::StringEqQ => write!(f, "string=?"),

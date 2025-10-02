@@ -934,6 +934,130 @@ impl Compiler {
                     self.emit_byte(OpCode::OP_LESS, 1);
                     return Ok(());
                 }
+                "null?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_NULL_Q, 1);
+                    return Ok(());
+                }
+                "pair?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_PAIR_Q, 1);
+                    return Ok(());
+                }
+                "number?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_NUMBER_Q, 1);
+                    return Ok(());
+                }
+                "string?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_STRING_Q, 1);
+                    return Ok(());
+                }
+                "boolean?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_BOOLEAN_Q, 1);
+                    return Ok(());
+                }
+                "char?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_CHAR_Q, 1);
+                    return Ok(());
+                }
+                "eq?" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_EQ_Q, 1);
+                    return Ok(());
+                }
+                "string=?" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_STRING_EQ_Q, 1);
+                    return Ok(());
+                }
+                "char=?" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_CHAR_EQ_Q, 1);
+                    return Ok(());
+                }
+                "char-numeric?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_CHAR_NUMERIC_Q, 1);
+                    return Ok(());
+                }
+                "char-whitespace?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_CHAR_WHITESPACE_Q, 1);
+                    return Ok(());
+                }
                 _ => {
                     // Fall through to regular function call
                 }
