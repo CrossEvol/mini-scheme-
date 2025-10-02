@@ -1,6 +1,7 @@
 use crate::ast::{DefineExpr, Expr, LambdaExpr};
 use crate::bytecode::{Chunk, OpCode};
 use crate::object::{Function, Value};
+use crate::trace::{Tracer, TraceConfig, CompilationTrace, CompilationPhase, format_ast_expr};
 
 /// Type of function being compiled
 #[derive(Debug, Clone, PartialEq)]
@@ -65,6 +66,7 @@ pub struct Compiler {
     pub scope_depth: usize,
     pub enclosing: Option<Box<Compiler>>,
     pub trace_enabled: bool,
+    pub tracer: Option<Tracer>,
 }
 
 impl Compiler {
@@ -78,6 +80,7 @@ impl Compiler {
             scope_depth: 0,
             enclosing: None,
             trace_enabled: false,
+            tracer: None,
         };
 
         // Reserve slot 0 for the script itself
@@ -100,6 +103,7 @@ impl Compiler {
             scope_depth: 0,
             enclosing: Some(enclosing),
             trace_enabled: false,
+            tracer: None,
         };
 
         // Reserve slot 0 for the function itself
@@ -115,23 +119,94 @@ impl Compiler {
     /// Enable compilation tracing
     pub fn enable_trace(&mut self) {
         self.trace_enabled = true;
+        if self.tracer.is_none() {
+            self.tracer = Some(Tracer::new(TraceConfig::compilation_only()));
+        }
+        if let Some(tracer) = &mut self.tracer {
+            tracer.enable_compilation();
+        }
     }
 
     /// Disable compilation tracing
     pub fn disable_trace(&mut self) {
         self.trace_enabled = false;
+        if let Some(tracer) = &mut self.tracer {
+            tracer.disable_compilation();
+        }
     }
 
-    /// Trace a compilation step
+    /// Set a custom tracer
+    pub fn set_tracer(&mut self, tracer: Tracer) {
+        self.tracer = Some(tracer);
+        self.trace_enabled = self.tracer.as_ref().map_or(false, |t| t.config.compilation);
+    }
+
+    /// Get a reference to the tracer
+    pub fn tracer(&self) -> Option<&Tracer> {
+        self.tracer.as_ref()
+    }
+
+    /// Get a mutable reference to the tracer
+    pub fn tracer_mut(&mut self) -> Option<&mut Tracer> {
+        self.tracer.as_mut()
+    }
+
+    /// Trace a compilation step (legacy method for backward compatibility)
     fn trace(&self, message: &str) {
         if self.trace_enabled {
             println!("[COMPILE] {}", message);
         }
     }
 
+    /// Trace a compilation phase with detailed information
+    fn trace_compilation_phase(&mut self, phase: CompilationPhase, expr: &Expr) {
+        if let Some(tracer) = &mut self.tracer {
+            let mut trace = CompilationTrace::new(
+                phase,
+                format_ast_expr(expr),
+                self.function.name.clone(),
+                self.scope_depth,
+            );
+
+            // Add current local variables
+            for local in &self.locals {
+                if local.depth >= 0 {
+                    trace.add_local(local.name.clone());
+                }
+            }
+
+            // Add current upvalues (simplified - we don't track names in upvalues yet)
+            for (i, _) in self.upvalues.iter().enumerate() {
+                trace.add_upvalue(format!("upvalue_{}", i));
+            }
+
+            tracer.trace_compilation(trace);
+        }
+    }
+
+    /// Trace instruction generation
+    fn trace_instruction(&mut self, opcode: OpCode, operands: Vec<u8>) {
+        if let Some(tracer) = &mut self.tracer {
+            // Create a new trace if we don't have one or add to the last one
+            if tracer.compilation_traces.is_empty() {
+                let mut trace = CompilationTrace::new(
+                    CompilationPhase::InstructionGeneration,
+                    "InstructionGeneration".to_string(),
+                    self.function.name.clone(),
+                    self.scope_depth,
+                );
+                trace.add_instruction(opcode, operands);
+                tracer.compilation_traces.push(trace);
+            } else if let Some(last_trace) = tracer.compilation_traces.last_mut() {
+                last_trace.add_instruction(opcode, operands);
+            }
+        }
+    }
+
     /// Compile an expression to bytecode
     pub fn compile_expr(&mut self, expr: &Expr) -> Result<(), CompileError> {
         self.trace(&format!("Compiling expression: {:?}", expr));
+        self.trace_compilation_phase(CompilationPhase::InstructionGeneration, expr);
 
         match expr {
             // Literal expressions
@@ -161,6 +236,7 @@ impl Compiler {
     /// Compile a number literal
     fn compile_number(&mut self, value: f64) -> Result<(), CompileError> {
         self.trace(&format!("Compiling number: {}", value));
+        self.trace_compilation_phase(CompilationPhase::ConstantGeneration, &Expr::Number(value));
         self.emit_constant(Value::Number(value))?;
         Ok(())
     }
@@ -196,6 +272,7 @@ impl Compiler {
     /// Compile a variable reference
     fn compile_variable(&mut self, name: &str) -> Result<(), CompileError> {
         self.trace(&format!("Compiling variable reference: {}", name));
+        self.trace_compilation_phase(CompilationPhase::VariableResolution, &Expr::Variable(name.to_string()));
 
         // Try to resolve as local variable first
         if let Some(local_index) = self.resolve_local(name) {
@@ -245,6 +322,7 @@ impl Compiler {
     fn emit_byte(&mut self, opcode: OpCode, line: usize) {
         self.function.chunk.write_instruction(opcode, line);
         self.trace(&format!("Emitted: {}", opcode.name()));
+        self.trace_instruction(opcode, vec![]);
     }
 
     /// Emit an instruction with one operand byte
@@ -253,6 +331,7 @@ impl Compiler {
             .chunk
             .write_instruction_with_byte(opcode, operand, line);
         self.trace(&format!("Emitted: {} {}", opcode.name(), operand));
+        self.trace_instruction(opcode, vec![operand]);
     }
 
     /// Emit an instruction with a 2-byte operand
@@ -261,6 +340,7 @@ impl Compiler {
             .chunk
             .write_instruction_with_short(opcode, operand, line);
         self.trace(&format!("Emitted: {} {}", opcode.name(), operand));
+        self.trace_instruction(opcode, vec![(operand >> 8) as u8, operand as u8]);
     }
 
     /// Get the current chunk for direct access
@@ -286,6 +366,22 @@ impl Compiler {
         // Can't have upvalues in script (top-level)
         if self.enclosing.is_none() {
             return None;
+        }
+
+        // Trace upvalue resolution
+        if let Some(tracer) = &mut self.tracer {
+            let mut trace = CompilationTrace::new(
+                CompilationPhase::UpvalueCapture,
+                format!("ResolveUpvalue(\"{}\")", name),
+                self.function.name.clone(),
+                self.scope_depth,
+            );
+            
+            for (i, _) in self.upvalues.iter().enumerate() {
+                trace.add_upvalue(format!("existing_upvalue_{}", i));
+            }
+            
+            tracer.trace_compilation(trace);
         }
 
         // Check if we already have this upvalue
@@ -319,6 +415,10 @@ impl Compiler {
 
                 // Add new upvalue that captures this local
                 let upvalue_index = self.add_upvalue(local_index as u8, true);
+                
+                // Trace successful upvalue capture
+                self.trace(&format!("Captured local '{}' as upvalue {}", name, upvalue_index));
+                
                 return Some(upvalue_index);
             }
 
@@ -326,6 +426,10 @@ impl Compiler {
             if let Some(upvalue_index) = enclosing.resolve_upvalue(name) {
                 // Add new upvalue that captures this upvalue
                 let new_upvalue_index = self.add_upvalue(upvalue_index as u8, false);
+                
+                // Trace successful upvalue capture
+                self.trace(&format!("Captured upvalue '{}' as upvalue {}", name, new_upvalue_index));
+                
                 return Some(new_upvalue_index);
             }
         }
@@ -402,12 +506,51 @@ impl Compiler {
     pub fn begin_scope(&mut self) {
         self.scope_depth += 1;
         self.trace(&format!("Beginning scope, depth now: {}", self.scope_depth));
+        
+        // Trace scope management
+        if let Some(tracer) = &mut self.tracer {
+            let mut trace = CompilationTrace::new(
+                CompilationPhase::ScopeManagement,
+                format!("BeginScope(depth={})", self.scope_depth),
+                self.function.name.clone(),
+                self.scope_depth,
+            );
+            
+            // Add current locals
+            for local in &self.locals {
+                if local.depth >= 0 {
+                    trace.add_local(local.name.clone());
+                }
+            }
+            
+            tracer.trace_compilation(trace);
+        }
     }
 
     /// End the current scope and emit instructions to close upvalues if needed
     pub fn end_scope(&mut self) {
+        let old_depth = self.scope_depth;
         self.scope_depth -= 1;
         self.trace(&format!("Ending scope, depth now: {}", self.scope_depth));
+
+        // Trace scope management
+        if let Some(tracer) = &mut self.tracer {
+            let mut trace = CompilationTrace::new(
+                CompilationPhase::ScopeManagement,
+                format!("EndScope(depth={} -> {})", old_depth, self.scope_depth),
+                self.function.name.clone(),
+                self.scope_depth,
+            );
+            
+            // Add locals that will be removed
+            for local in &self.locals {
+                if local.depth > self.scope_depth as isize {
+                    trace.add_local(format!("removing: {}", local.name));
+                }
+            }
+            
+            tracer.trace_compilation(trace);
+        }
 
         // Remove locals that are going out of scope
         while !self.locals.is_empty()
@@ -527,6 +670,8 @@ impl Compiler {
             "Compiling lambda with {} parameters",
             lambda.params.len()
         ));
+        
+        self.trace_compilation_phase(CompilationPhase::FunctionCompilation, &Expr::Lambda(Box::new(lambda.clone())));
 
         // We need to compile the lambda in a separate function context
         // For now, let's create a simple implementation that doesn't handle upvalues
@@ -544,6 +689,7 @@ impl Compiler {
             scope_depth: 0,
             enclosing: None, // Simplified - no upvalue support yet
             trace_enabled: self.trace_enabled,
+            tracer: self.tracer.as_ref().map(|t| Tracer::new(t.config.clone())),
         };
 
         // Reserve slot 0 for the function itself

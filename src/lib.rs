@@ -7,6 +7,7 @@ pub mod lexer;
 pub mod object;
 pub mod parser;
 pub mod token;
+pub mod trace;
 pub mod vm;
 
 // Re-exports for convenience
@@ -18,6 +19,7 @@ pub use lexer::Lexer;
 pub use object::{Closure, Cons, Function, Object, Upvalue, Value};
 pub use parser::Parser;
 pub use token::{Token, TokenInfo};
+pub use trace::{Tracer, TraceConfig, CompilationTrace, ExecutionTrace, CompilationPhase, TraceStats};
 pub use vm::{VM, RuntimeError, CallFrame};
 
 #[cfg(test)]

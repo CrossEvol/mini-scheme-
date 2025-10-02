@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::object::{Value, Object, Closure, Function};
 use crate::bytecode::{OpCode, Chunk};
+use crate::trace::{Tracer, TraceConfig, ExecutionTrace, FrameInfo, UpvalueState};
 
 /// Runtime error types for the virtual machine
 #[derive(Debug, Clone)]
@@ -82,6 +83,8 @@ pub struct VM {
     pub open_upvalues: Vec<Rc<RefCell<crate::object::Upvalue>>>,
     /// Enable/disable execution tracing
     pub trace_execution: bool,
+    /// Tracer for execution tracing
+    pub tracer: Option<Tracer>,
 }
 
 /// Maximum stack size to prevent stack overflow
@@ -100,6 +103,7 @@ impl VM {
             globals: HashMap::new(),
             open_upvalues: Vec::new(),
             trace_execution: false,
+            tracer: None,
         }
     }
 
@@ -111,16 +115,44 @@ impl VM {
         self.frame_count = 0;
         self.globals.clear();
         self.open_upvalues.clear();
+        if let Some(tracer) = &mut self.tracer {
+            tracer.clear_traces();
+        }
     }
 
     /// Enable execution tracing
     pub fn enable_trace(&mut self) {
         self.trace_execution = true;
+        if self.tracer.is_none() {
+            self.tracer = Some(Tracer::new(TraceConfig::execution_only()));
+        }
+        if let Some(tracer) = &mut self.tracer {
+            tracer.enable_execution();
+        }
     }
 
     /// Disable execution tracing
     pub fn disable_trace(&mut self) {
         self.trace_execution = false;
+        if let Some(tracer) = &mut self.tracer {
+            tracer.disable_execution();
+        }
+    }
+
+    /// Set a custom tracer
+    pub fn set_tracer(&mut self, tracer: Tracer) {
+        self.tracer = Some(tracer);
+        self.trace_execution = self.tracer.as_ref().map_or(false, |t| t.config.execution);
+    }
+
+    /// Get a reference to the tracer
+    pub fn tracer(&self) -> Option<&Tracer> {
+        self.tracer.as_ref()
+    }
+
+    /// Get a mutable reference to the tracer
+    pub fn tracer_mut(&mut self) -> Option<&mut Tracer> {
+        self.tracer.as_mut()
     }
 
     // Stack management methods
@@ -250,123 +282,179 @@ impl VM {
     /// Main execution loop
     fn run(&mut self) -> Result<Value, RuntimeError> {
         loop {
-            if self.trace_execution {
+            // Prepare execution trace if tracing is enabled
+            let mut execution_trace = if self.trace_execution {
                 self.print_stack();
                 let frame = &self.frames[self.frame_count - 1];
                 let chunk = &frame.closure.function.chunk;
                 let disassembler = crate::bytecode::Disassembler::new();
                 disassembler.disassemble_instruction(chunk, frame.ip);
-            }
+                
+                // Create execution trace
+                Some(self.create_execution_trace_before())
+            } else {
+                None
+            };
 
             let instruction = self.read_byte()?;
             let opcode = OpCode::from_byte(instruction)
                 .ok_or_else(|| RuntimeError::InvalidOperation(format!("Unknown opcode: {}", instruction)))?;
 
-            match opcode {
+            // Record instruction and operands in trace
+            if let Some(ref mut trace) = execution_trace {
+                trace.instruction = opcode;
+                // We'll read operands as we execute the instruction
+            }
+
+            let result = match opcode {
                 OpCode::OP_CONSTANT => {
                     let constant_index = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(constant_index as u8);
+                    }
                     let constant = self.read_constant(constant_index)?;
                     self.push(constant)?;
+                    Ok(())
                 }
 
                 OpCode::OP_NIL => {
                     self.push(Value::Nil)?;
+                    Ok(())
                 }
 
                 OpCode::OP_TRUE => {
                     self.push(Value::Boolean(true))?;
+                    Ok(())
                 }
 
                 OpCode::OP_FALSE => {
                     self.push(Value::Boolean(false))?;
+                    Ok(())
                 }
 
                 OpCode::OP_POP => {
                     self.pop()?;
+                    Ok(())
                 }
 
                 OpCode::OP_GET_LOCAL => {
                     let slot = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(slot as u8);
+                    }
                     let value = self.get_local(slot)?;
                     self.push(value)?;
+                    Ok(())
                 }
 
                 OpCode::OP_SET_LOCAL => {
                     let slot = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(slot as u8);
+                    }
                     let value = self.peek(0)?.clone(); // Don't pop yet in case of error
                     self.set_local(slot, value)?;
                     // Value stays on stack for assignment expressions
+                    Ok(())
                 }
 
                 OpCode::OP_GET_GLOBAL => {
                     let constant_index = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(constant_index as u8);
+                    }
                     let name = self.read_string_constant(constant_index)?;
                     let value = self.get_global(&name)?;
                     self.push(value)?;
+                    Ok(())
                 }
 
                 OpCode::OP_DEFINE_GLOBAL => {
                     let constant_index = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(constant_index as u8);
+                    }
                     let name = self.read_string_constant(constant_index)?;
                     let value = self.pop()?;
                     self.define_global(name, value);
+                    Ok(())
                 }
 
                 OpCode::OP_SET_GLOBAL => {
                     let constant_index = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(constant_index as u8);
+                    }
                     let name = self.read_string_constant(constant_index)?;
                     let value = self.peek(0)?.clone(); // Don't pop yet in case of error
                     self.set_global(&name, value)?;
                     // Only pop after successful assignment
                     self.pop()?;
+                    Ok(())
                 }
 
                 OpCode::OP_GET_UPVALUE => {
                     let upvalue_index = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(upvalue_index as u8);
+                    }
                     let value = self.get_upvalue(upvalue_index)?;
                     self.push(value)?;
+                    Ok(())
                 }
 
                 OpCode::OP_SET_UPVALUE => {
                     let upvalue_index = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(upvalue_index as u8);
+                    }
                     let value = self.peek(0)?.clone(); // Don't pop yet in case of error
                     self.set_upvalue(upvalue_index, value)?;
                     // Value stays on stack for assignment expressions
+                    Ok(())
                 }
 
                 OpCode::OP_EQUAL => {
                     let b = self.pop()?;
                     let a = self.pop()?;
                     self.push(Value::Boolean(a.equal(&b)))?;
+                    Ok(())
                 }
 
                 OpCode::OP_GREATER => {
                     self.binary_comparison(|a, b| a > b)?;
+                    Ok(())
                 }
 
                 OpCode::OP_LESS => {
                     self.binary_comparison(|a, b| a < b)?;
+                    Ok(())
                 }
 
                 OpCode::OP_ADD => {
                     self.binary_arithmetic(|a, b| a + b)?;
+                    Ok(())
                 }
 
                 OpCode::OP_SUBTRACT => {
                     self.binary_arithmetic(|a, b| a - b)?;
+                    Ok(())
                 }
 
                 OpCode::OP_MULTIPLY => {
                     self.binary_arithmetic(|a, b| a * b)?;
+                    Ok(())
                 }
 
                 OpCode::OP_DIVIDE => {
                     self.binary_divide()?;
+                    Ok(())
                 }
 
                 OpCode::OP_NOT => {
                     let value = self.pop()?;
                     self.push(Value::Boolean(value.is_falsy()))?;
+                    Ok(())
                 }
 
                 OpCode::OP_NEGATE => {
@@ -378,23 +466,35 @@ impl VM {
                             got: self.type_name(&value),
                         }),
                     }
+                    Ok(())
                 }
 
                 OpCode::OP_CALL => {
                     let arg_count = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(arg_count as u8);
+                    }
                     self.call_value(arg_count)?;
+                    Ok(())
                 }
 
                 OpCode::OP_CLOSE_UPVALUE => {
                     let slot = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(slot as u8);
+                    }
                     let current_frame = self.current_frame()
                         .ok_or_else(|| RuntimeError::InvalidOperation("No active call frame".to_string()))?;
                     let absolute_slot = current_frame.slots + slot;
                     self.close_upvalues(absolute_slot);
+                    Ok(())
                 }
 
                 OpCode::OP_CLOSURE => {
                     let constant_index = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(constant_index as u8);
+                    }
                     let function_value = self.read_constant(constant_index)?;
                     
                     // Extract the function from the constant
@@ -428,6 +528,11 @@ impl VM {
                     for _ in 0..function.upvalue_count {
                         let is_local = self.read_byte()? != 0;
                         let index = self.read_byte()? as usize;
+                        
+                        if let Some(ref mut trace) = execution_trace {
+                            trace.operands.push(if is_local { 1 } else { 0 });
+                            trace.operands.push(index as u8);
+                        }
 
                         let upvalue = if is_local {
                             // Capture a local variable from the current frame
@@ -454,6 +559,7 @@ impl VM {
                     // Push the closure onto the stack
                     let closure_value = Value::closure(closure);
                     self.push(closure_value)?;
+                    Ok(())
                 }
 
                 OpCode::OP_RETURN => {
@@ -464,6 +570,10 @@ impl VM {
                     self.close_upvalues(frame.slots);
                     
                     if self.frame_count == 0 {
+                        // Complete tracing before returning
+                        if let Some(trace) = execution_trace {
+                            self.complete_execution_trace(trace);
+                        }
                         // End of program
                         return Ok(result);
                     }
@@ -471,14 +581,23 @@ impl VM {
                     // Restore stack to frame boundary and push result
                     self.stack_top = frame.slots;
                     self.push(result)?;
+                    Ok(())
                 }
 
                 _ => {
-                    return Err(RuntimeError::InvalidOperation(
+                    Err(RuntimeError::InvalidOperation(
                         format!("Unimplemented opcode: {:?}", opcode)
-                    ));
+                    ))
                 }
+            };
+
+            // Complete execution trace if tracing is enabled
+            if let Some(trace) = execution_trace {
+                self.complete_execution_trace(trace);
             }
+
+            // Handle any execution errors
+            result?;
         }
     }
 
@@ -649,6 +768,125 @@ impl VM {
     /// Get the current chunk being executed
     pub fn current_chunk(&self) -> Option<&Chunk> {
         self.current_frame().map(|frame| frame.chunk())
+    }
+
+    // Execution tracing helper methods
+
+    /// Create an execution trace before instruction execution
+    fn create_execution_trace_before(&self) -> ExecutionTrace {
+        let frame = &self.frames[self.frame_count - 1];
+        
+        let frame_info = FrameInfo {
+            function_name: frame.closure.function.name.clone(),
+            instruction_pointer: frame.ip,
+            local_variables: self.get_local_variables_for_trace(),
+            stack_base: frame.slots,
+        };
+
+        let mut trace = ExecutionTrace::new(
+            OpCode::OP_NIL, // Will be updated with actual instruction
+            Vec::new(),     // Will be updated with actual operands
+            frame_info,
+        );
+
+        // Capture stack state before execution
+        trace.set_stack_before(self.format_stack_for_trace());
+
+        // Capture upvalue states
+        for (i, upvalue) in self.open_upvalues.iter().enumerate() {
+            if let Ok(upvalue_ref) = upvalue.try_borrow() {
+                let state = match &upvalue_ref.location {
+                    crate::object::UpvalueLocation::Stack(slot) => UpvalueState {
+                        index: i,
+                        is_closed: false,
+                        value: if *slot < self.stack.len() {
+                            self.format_value_for_trace(&self.stack[*slot])
+                        } else {
+                            "INVALID".to_string()
+                        },
+                        stack_location: Some(*slot),
+                    },
+                    crate::object::UpvalueLocation::Closed(value) => UpvalueState {
+                        index: i,
+                        is_closed: true,
+                        value: self.format_value_for_trace(value),
+                        stack_location: None,
+                    },
+                };
+                trace.add_upvalue_state(state);
+            }
+        }
+
+        trace
+    }
+
+    /// Complete an execution trace after instruction execution
+    fn complete_execution_trace(&mut self, mut trace: ExecutionTrace) {
+        // Capture stack state after execution
+        trace.set_stack_after(self.format_stack_for_trace());
+
+        // Update local variables
+        trace.current_frame.local_variables = self.get_local_variables_for_trace();
+
+        // Trace the execution
+        if let Some(tracer) = &mut self.tracer {
+            tracer.trace_execution(trace);
+        }
+    }
+
+    /// Format the current stack for tracing
+    fn format_stack_for_trace(&self) -> Vec<String> {
+        let mut stack_strings = Vec::new();
+        for i in 0..self.stack_top {
+            stack_strings.push(self.format_value_for_trace(&self.stack[i]));
+        }
+        stack_strings
+    }
+
+    /// Format a value for tracing output
+    fn format_value_for_trace(&self, value: &Value) -> String {
+        match value {
+            Value::Number(n) => n.to_string(),
+            Value::Boolean(b) => if *b { "#t".to_string() } else { "#f".to_string() },
+            Value::Nil => "nil".to_string(),
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        Object::String(s) => format!("\"{}\"", s),
+                        Object::Character(c) => format!("#\\{}", c),
+                        Object::Function(f) => format!("<fn {}>", f.name),
+                        Object::Closure(_) => "<closure>".to_string(),
+                        Object::Cons(_) => "<cons>".to_string(),
+                        Object::Vector(_) => "<vector>".to_string(),
+                        Object::Hashtable(_) => "<hashtable>".to_string(),
+                        Object::Upvalue(_) => "<upvalue>".to_string(),
+                    }
+                } else {
+                    "<object>".to_string()
+                }
+            }
+        }
+    }
+
+    /// Get local variables for the current frame for tracing
+    fn get_local_variables_for_trace(&self) -> HashMap<String, String> {
+        let mut locals = HashMap::new();
+        
+        if let Some(frame) = self.current_frame() {
+            // For now, we'll just show slot indices since we don't track variable names in the VM
+            // In a full implementation, we'd need debug information from the compiler
+            for i in 0..frame.closure.function.arity {
+                let slot = frame.slots + i;
+                if slot < self.stack.len() {
+                    locals.insert(
+                        format!("arg_{}", i),
+                        self.format_value_for_trace(&self.stack[slot])
+                    );
+                }
+            }
+        }
+        
+        locals
     }
 
     // Local variable support methods
