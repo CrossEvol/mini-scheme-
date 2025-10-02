@@ -873,7 +873,8 @@ impl Compiler {
                         });
                     }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("make-hashtable".to_string(), args.len());
+                    let builtin_value =
+                        crate::object::Value::builtin("make-hashtable".to_string(), args.len());
                     self.emit_constant(builtin_value)?;
                     // Compile the arguments (if any)
                     for arg in args {
@@ -941,6 +942,18 @@ impl Compiler {
                     self.compile_expr(&args[0])?;
                     self.compile_expr(&args[1])?;
                     self.emit_byte(OpCode::OP_LESS, 1);
+                    return Ok(());
+                }
+                ">" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_GREATER, 1);
                     return Ok(());
                 }
                 "null?" => {
@@ -1188,7 +1201,8 @@ impl Compiler {
                         });
                     }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("string->number".to_string(), 1);
+                    let builtin_value =
+                        crate::object::Value::builtin("string->number".to_string(), 1);
                     self.emit_constant(builtin_value)?;
                     // Compile the argument
                     self.compile_expr(&args[0])?;
@@ -1204,7 +1218,8 @@ impl Compiler {
                         });
                     }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("list->vector".to_string(), 1);
+                    let builtin_value =
+                        crate::object::Value::builtin("list->vector".to_string(), 1);
                     self.emit_constant(builtin_value)?;
                     // Compile the argument
                     self.compile_expr(&args[0])?;
@@ -1220,7 +1235,8 @@ impl Compiler {
                         });
                     }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("vector->list".to_string(), 1);
+                    let builtin_value =
+                        crate::object::Value::builtin("vector->list".to_string(), 1);
                     self.emit_constant(builtin_value)?;
                     // Compile the argument
                     self.compile_expr(&args[0])?;
@@ -1236,7 +1252,8 @@ impl Compiler {
                         });
                     }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("list->string".to_string(), 1);
+                    let builtin_value =
+                        crate::object::Value::builtin("list->string".to_string(), 1);
                     self.emit_constant(builtin_value)?;
                     // Compile the argument
                     self.compile_expr(&args[0])?;
@@ -1268,7 +1285,8 @@ impl Compiler {
                         });
                     }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("vector-length".to_string(), 1);
+                    let builtin_value =
+                        crate::object::Value::builtin("vector-length".to_string(), 1);
                     self.emit_constant(builtin_value)?;
                     // Compile the argument
                     self.compile_expr(&args[0])?;
@@ -1335,7 +1353,8 @@ impl Compiler {
                         });
                     }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("hashtable-ref".to_string(), args.len());
+                    let builtin_value =
+                        crate::object::Value::builtin("hashtable-ref".to_string(), args.len());
                     self.emit_constant(builtin_value)?;
                     // Compile the arguments
                     for arg in args {
@@ -1353,7 +1372,8 @@ impl Compiler {
                         });
                     }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("hashtable-set!".to_string(), 3);
+                    let builtin_value =
+                        crate::object::Value::builtin("hashtable-set!".to_string(), 3);
                     self.emit_constant(builtin_value)?;
                     // Compile the arguments
                     self.compile_expr(&args[0])?;
@@ -1530,8 +1550,10 @@ impl Compiler {
 
         // For now, implement let-loop using a global variable approach
         // This is a temporary solution until we have proper upvalue support
-        
-        let param_names: Vec<String> = let_loop.bindings.iter()
+
+        let param_names: Vec<String> = let_loop
+            .bindings
+            .iter()
             .map(|(name, _)| name.clone())
             .collect();
 
@@ -1579,7 +1601,7 @@ impl Compiler {
         for (var_name, init_expr) in &let_expr.bindings {
             // Compile the initialization expression
             self.compile_expr(init_expr)?;
-            
+
             // Declare and define the variable
             // The value is already on the stack and becomes the variable's value
             self.declare_local(var_name.clone())?;
@@ -1998,7 +2020,10 @@ impl Compiler {
                 // Nested quote: '(quote x) => (quote x)
                 let quoted_value = self.expr_to_value(quoted)?;
                 let quote_symbol = Value::symbol("quote".to_string());
-                Ok(Value::cons(quote_symbol, Value::cons(quoted_value, Value::Nil)))
+                Ok(Value::cons(
+                    quote_symbol,
+                    Value::cons(quoted_value, Value::Nil),
+                ))
             }
 
             // Handle function calls in quoted context (they become lists)
