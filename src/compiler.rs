@@ -1058,6 +1058,70 @@ impl Compiler {
                     self.emit_byte(OpCode::OP_CHAR_WHITESPACE_Q, 1);
                     return Ok(());
                 }
+                "display" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack first
+                    let builtin_value = crate::object::Value::builtin("display".to_string(), 1);
+                    self.emit_constant(builtin_value)?;
+                    // Then compile the argument
+                    self.compile_expr(&args[0])?;
+                    // Call the built-in function (display produces no output)
+                    self.emit_bytes(OpCode::OP_CALL, 1, 1);
+                    return Ok(());
+                }
+                "newline" => {
+                    if args.len() != 0 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 0,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("newline".to_string(), 0);
+                    self.emit_constant(builtin_value)?;
+                    // Call the built-in function (no arguments)
+                    self.emit_bytes(OpCode::OP_CALL, 0, 1);
+                    return Ok(());
+                }
+                "error" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("error".to_string(), 2);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the arguments (procedure name and message)
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 2, 1);
+                    return Ok(());
+                }
+                "for-each" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("for-each".to_string(), 2);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the arguments
+                    self.compile_expr(&args[0])?; // procedure
+                    self.compile_expr(&args[1])?; // list
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 2, 1);
+                    return Ok(());
+                }
                 _ => {
                     // Fall through to regular function call
                 }

@@ -3,6 +3,7 @@ use crate::object::{Closure, Function, Object, Value};
 use crate::trace::{ExecutionTrace, FrameInfo, TraceConfig, Tracer, UpvalueState};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::io::{self, Write};
 use std::rc::Rc;
 
 /// Runtime error types for the virtual machine
@@ -15,6 +16,7 @@ pub enum RuntimeError {
     StackUnderflow,
     InvalidOperation(String),
     DivisionByZero,
+    UserError { procedure: String, message: String },
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -33,6 +35,9 @@ impl std::fmt::Display for RuntimeError {
             RuntimeError::StackUnderflow => write!(f, "Stack underflow"),
             RuntimeError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
             RuntimeError::DivisionByZero => write!(f, "Division by zero"),
+            RuntimeError::UserError { procedure, message } => {
+                write!(f, "Exception in {}: {}", procedure, message)
+            }
         }
     }
 }
@@ -91,6 +96,8 @@ pub struct VM {
     pub trace_execution: bool,
     /// Tracer for execution tracing
     pub tracer: Option<Tracer>,
+    /// Flag to track if output was produced without a trailing newline
+    pub output_produced: bool,
 }
 
 /// Maximum stack size to prevent stack overflow
@@ -110,6 +117,7 @@ impl VM {
             open_upvalues: Vec::new(),
             trace_execution: false,
             tracer: None,
+            output_produced: false,
         }
     }
 
@@ -121,6 +129,7 @@ impl VM {
         self.frame_count = 0;
         self.globals.clear();
         self.open_upvalues.clear();
+        self.output_produced = false;
         if let Some(tracer) = &mut self.tracer {
             tracer.clear_traces();
         }
@@ -159,6 +168,16 @@ impl VM {
     /// Get a mutable reference to the tracer
     pub fn tracer_mut(&mut self) -> Option<&mut Tracer> {
         self.tracer.as_mut()
+    }
+
+    /// Reset the output produced flag
+    pub fn reset_output_flag(&mut self) {
+        self.output_produced = false;
+    }
+
+    /// Check if output was produced during execution
+    pub fn output_was_produced(&self) -> bool {
+        self.output_produced
     }
 
     // Stack management methods
@@ -230,6 +249,7 @@ impl VM {
                         Object::Cons(_) => print!("<cons>"),
                         Object::Vector(_) => print!("<vector>"),
                         Object::Hashtable(_) => print!("<hashtable>"),
+                        Object::Builtin(builtin) => print!("<builtin {}>", builtin.name),
                         Object::Upvalue(_) => print!("<upvalue>"),
                     }
                 } else {
@@ -796,7 +816,8 @@ impl VM {
                     let a = self.pop()?;
                     let result = match (&a, &b) {
                         (Value::Object(obj_a), Value::Object(obj_b)) => {
-                            if let (Ok(ref_a), Ok(ref_b)) = (obj_a.try_borrow(), obj_b.try_borrow()) {
+                            if let (Ok(ref_a), Ok(ref_b)) = (obj_a.try_borrow(), obj_b.try_borrow())
+                            {
                                 match (&*ref_a, &*ref_b) {
                                     (Object::String(s1), Object::String(s2)) => s1 == s2,
                                     _ => false,
@@ -816,7 +837,8 @@ impl VM {
                     let a = self.pop()?;
                     let result = match (&a, &b) {
                         (Value::Object(obj_a), Value::Object(obj_b)) => {
-                            if let (Ok(ref_a), Ok(ref_b)) = (obj_a.try_borrow(), obj_b.try_borrow()) {
+                            if let (Ok(ref_a), Ok(ref_b)) = (obj_a.try_borrow(), obj_b.try_borrow())
+                            {
                                 match (&*ref_a, &*ref_b) {
                                     (Object::Character(c1), Object::Character(c2)) => c1 == c2,
                                     _ => false,
@@ -1163,6 +1185,7 @@ impl VM {
                         Object::Cons(_) => "<cons>".to_string(),
                         Object::Vector(_) => "<vector>".to_string(),
                         Object::Hashtable(_) => "<hashtable>".to_string(),
+                        Object::Builtin(builtin) => format!("<builtin {}>", builtin.name),
                         Object::Upvalue(_) => "<upvalue>".to_string(),
                     }
                 } else {
@@ -1254,8 +1277,12 @@ impl VM {
                             let closure_rc = Rc::new(closure.clone());
                             self.call_closure(closure_rc, arg_count)
                         }
+                        Object::Builtin(builtin) => {
+                            // Call the built-in function
+                            self.call_builtin(&builtin.name, builtin.arity, arg_count)
+                        }
                         _ => Err(RuntimeError::TypeError {
-                            expected: "function or closure".to_string(),
+                            expected: "function, closure, or built-in".to_string(),
                             got: self.type_name(&callee),
                         }),
                     }
@@ -1266,7 +1293,7 @@ impl VM {
                 }
             }
             _ => Err(RuntimeError::TypeError {
-                expected: "function or closure".to_string(),
+                expected: "function, closure, or built-in".to_string(),
                 got: self.type_name(&callee),
             }),
         }
@@ -1292,6 +1319,387 @@ impl VM {
         self.push_frame(closure, slots)?;
 
         Ok(())
+    }
+
+    /// Call a built-in function with the given number of arguments
+    fn call_builtin(
+        &mut self,
+        name: &str,
+        expected_arity: usize,
+        arg_count: usize,
+    ) -> Result<(), RuntimeError> {
+        // Check arity
+        if expected_arity != arg_count {
+            return Err(RuntimeError::ArityMismatch {
+                expected: expected_arity,
+                got: arg_count,
+            });
+        }
+
+        // The stack layout before call: [..., function, arg1, arg2, ..., argN]
+        // We need to remove the function and arguments, leaving only the result
+
+        // Execute the built-in function (this may push a result to the stack)
+        match name {
+            "display" => self.builtin_display(arg_count),
+            "newline" => self.builtin_newline(arg_count),
+            "error" => self.builtin_error(arg_count),
+            "for-each" => self.builtin_for_each(arg_count),
+            _ => Err(RuntimeError::InvalidOperation(format!(
+                "Unknown built-in function: {}",
+                name
+            ))),
+        }?;
+
+        // After the built-in function call, the stack should be:
+        // [..., function, arg1, arg2, ..., argN, result]
+        // We need to remove the function and arguments, keeping only the result
+
+        // Get the result (top of stack)
+        let result = self.stack[self.stack_top - 1].clone();
+
+        // Remove function and arguments from the stack
+        self.stack_top -= arg_count + 1;
+
+        // Push the result back
+        self.push(result)?;
+
+        Ok(())
+    }
+
+    // Built-in function implementations
+
+    /// Implement the display built-in function
+    fn builtin_display(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        // Get the argument to display
+        let value = self.pop()?;
+
+        // Display the value without quotes (unlike normal printing)
+        match &value {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => {
+                            print!("{}", s); // No quotes for display
+                        }
+                        _ => {
+                            print!("{}", value); // Use normal display for other objects
+                        }
+                    }
+                } else {
+                    print!("{}", value);
+                }
+            }
+            _ => {
+                print!("{}", value);
+            }
+        }
+
+        // Ensure output is flushed immediately
+        let _ = io::stdout().flush();
+
+        // Mark that output was produced (for REPL formatting)
+        self.output_produced = true;
+
+        // display returns unspecified value (we'll use nil)
+        self.push(Value::Nil)?;
+        Ok(())
+    }
+
+    /// Implement the newline built-in function
+    fn builtin_newline(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 0 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 0,
+                got: arg_count,
+            });
+        }
+
+        // Print a newline
+        println!();
+
+        // Ensure output is flushed immediately
+        let _ = io::stdout().flush();
+
+        // newline returns unspecified value (we'll use nil)
+        self.push(Value::Nil)?;
+        Ok(())
+    }
+
+    /// Implement the error built-in function
+    fn builtin_error(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 2 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 2,
+                got: arg_count,
+            });
+        }
+
+        // Get the message and procedure name arguments (in reverse order due to stack)
+        let message = self.pop()?;
+        let proc_name = self.pop()?;
+
+        // Convert arguments to strings for the error message
+        let proc_str = match &proc_name {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => s.clone(),
+                        crate::object::Object::Symbol(s) => s.clone(),
+                        _ => format!("{}", proc_name),
+                    }
+                } else {
+                    format!("{}", proc_name)
+                }
+            }
+            _ => format!("{}", proc_name),
+        };
+
+        let msg_str = match &message {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => s.clone(),
+                        _ => format!("{}", message),
+                    }
+                } else {
+                    format!("{}", message)
+                }
+            }
+            _ => format!("{}", message),
+        };
+
+        // Raise the error immediately
+        Err(RuntimeError::UserError {
+            procedure: proc_str,
+            message: msg_str,
+        })
+    }
+
+    /// Implement the for-each built-in function
+    fn builtin_for_each(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 2 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 2,
+                got: arg_count,
+            });
+        }
+
+        // Get the list (second argument)
+        let list = self.pop()?;
+        // Get the procedure (first argument)
+        let proc = self.pop()?;
+
+        // Verify the procedure is callable
+        if !proc.is_callable() {
+            return Err(RuntimeError::TypeError {
+                expected: "procedure".to_string(),
+                got: self.type_name(&proc),
+            });
+        }
+
+        // Collect all elements from the list first to avoid borrowing issues
+        let mut elements = Vec::new();
+        let mut current = list;
+        loop {
+            let next_current = match &current {
+                Value::Nil => break, // End of list
+                Value::Object(obj) => {
+                    if let Ok(obj_ref) = obj.try_borrow() {
+                        if let crate::object::Object::Cons(cons) = &*obj_ref {
+                            elements.push(cons.car.clone());
+                            cons.cdr.clone()
+                        } else {
+                            return Err(RuntimeError::TypeError {
+                                expected: "list".to_string(),
+                                got: self.type_name(&current),
+                            });
+                        }
+                    } else {
+                        return Err(RuntimeError::InvalidOperation(
+                            "Cannot borrow list object".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(RuntimeError::TypeError {
+                        expected: "list".to_string(),
+                        got: self.type_name(&current),
+                    });
+                }
+            };
+            current = next_current;
+        }
+
+        // Apply the procedure to each element
+        for element in elements {
+            match &proc {
+                Value::Object(obj) => {
+                    if let Ok(obj_ref) = obj.try_borrow() {
+                        match &*obj_ref {
+                            Object::Builtin(builtin) => {
+                                // Handle builtin functions directly
+                                match builtin.name.as_str() {
+                                    "display" if builtin.arity == 1 => {
+                                        // Push the argument and call display
+                                        self.push(element)?;
+                                        self.builtin_display(1)?;
+                                        self.pop()?; // Remove the result
+                                    }
+                                    "newline" if builtin.arity == 0 => {
+                                        // Call newline (no arguments needed)
+                                        self.builtin_newline(0)?;
+                                        self.pop()?; // Remove the result
+                                    }
+                                    _ => {
+                                        return Err(RuntimeError::InvalidOperation(format!(
+                                            "Unsupported builtin in for-each: {}",
+                                            builtin.name
+                                        )));
+                                    }
+                                }
+                            }
+                            Object::Closure(_) | Object::Function(_) => {
+                                // For user-defined functions, we'll use a simpler approach
+                                // Save the current VM state
+                                let saved_stack_top = self.stack_top;
+                                let saved_frame_count = self.frame_count;
+
+                                // Push the procedure and argument onto the stack
+                                self.push(proc.clone())?;
+                                self.push(element)?;
+
+                                // Call the procedure with 1 argument
+                                self.call_value(1)?;
+
+                                // Execute until we return to the original frame count
+                                while self.frame_count > saved_frame_count {
+                                    // Execute the main run loop but break on return to original level
+                                    match self.run_single_call() {
+                                        Ok(_) => break,
+                                        Err(e) => return Err(e),
+                                    }
+                                }
+
+                                // Pop the result (for-each discards return values)
+                                if self.stack_top > saved_stack_top {
+                                    self.pop()?;
+                                }
+                            }
+                            _ => {
+                                return Err(RuntimeError::TypeError {
+                                    expected: "procedure".to_string(),
+                                    got: self.type_name(&proc),
+                                });
+                            }
+                        }
+                    } else {
+                        return Err(RuntimeError::InvalidOperation(
+                            "Cannot borrow procedure object".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(RuntimeError::TypeError {
+                        expected: "procedure".to_string(),
+                        got: self.type_name(&proc),
+                    });
+                }
+            }
+        }
+
+        // for-each returns unspecified value (push nil)
+        self.push(Value::Nil)?;
+        Ok(())
+    }
+
+    /// Execute a single function call and return when it completes
+    fn run_single_call(&mut self) -> Result<Value, RuntimeError> {
+        let initial_frame_count = self.frame_count;
+
+        loop {
+            // Check if we've returned to the initial frame count
+            if self.frame_count < initial_frame_count {
+                // We've returned from the call
+                return self.pop();
+            }
+
+            // Execute one instruction
+            let instruction = self.read_byte()?;
+            let opcode = OpCode::from_byte(instruction).ok_or_else(|| {
+                RuntimeError::InvalidOperation(format!("Unknown opcode: {}", instruction))
+            })?;
+
+            match opcode {
+                OpCode::OP_CONSTANT => {
+                    let constant_index = self.read_byte()? as usize;
+                    let constant = self.read_constant(constant_index)?;
+                    self.push(constant)?;
+                }
+                OpCode::OP_NIL => {
+                    self.push(Value::Nil)?;
+                }
+                OpCode::OP_TRUE => {
+                    self.push(Value::Boolean(true))?;
+                }
+                OpCode::OP_FALSE => {
+                    self.push(Value::Boolean(false))?;
+                }
+                OpCode::OP_POP => {
+                    self.pop()?;
+                }
+                OpCode::OP_GET_LOCAL => {
+                    let slot = self.read_byte()? as usize;
+                    let value = self.get_local(slot)?;
+                    self.push(value)?;
+                }
+                OpCode::OP_SET_LOCAL => {
+                    let slot = self.read_byte()? as usize;
+                    let value = self.peek(0)?.clone();
+                    self.set_local(slot, value)?;
+                }
+                OpCode::OP_GET_GLOBAL => {
+                    let constant_index = self.read_byte()? as usize;
+                    let name = self.read_string_constant(constant_index)?;
+                    let value = self.get_global(&name)?;
+                    self.push(value)?;
+                }
+                OpCode::OP_CALL => {
+                    let arg_count = self.read_byte()? as usize;
+                    self.call_value(arg_count)?;
+                }
+                OpCode::OP_RETURN => {
+                    let result = self.pop()?;
+                    let frame = self.pop_frame()?;
+
+                    // Close any upvalues that are leaving scope
+                    self.close_upvalues(frame.slots);
+
+                    if self.frame_count < initial_frame_count {
+                        // We've returned from the original call
+                        return Ok(result);
+                    }
+
+                    // Restore stack to frame boundary and push result
+                    self.stack_top = frame.slots;
+                    self.push(result)?;
+                }
+                // Add other essential opcodes as needed
+                _ => {
+                    return Err(RuntimeError::InvalidOperation(format!(
+                        "Unsupported opcode in nested call: {:?}",
+                        opcode
+                    )));
+                }
+            }
+        }
     }
 
     // Upvalue management methods
@@ -1466,6 +1874,7 @@ impl VM {
                         Object::Hashtable(_) => "hashtable".to_string(),
                         Object::Function(_) => "function".to_string(),
                         Object::Closure(_) => "closure".to_string(),
+                        Object::Builtin(_) => "builtin".to_string(),
                         Object::Upvalue(_) => "upvalue".to_string(),
                     }
                 } else {

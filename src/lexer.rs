@@ -220,6 +220,7 @@ impl Lexer {
             "list" => Token::List,
             "vector" => Token::Vector,
             "display" => Token::Display,
+            "newline" => Token::Newline,
             "error" => Token::Error,
             "values" => Token::Values,
             "for-each" => Token::ForEach,

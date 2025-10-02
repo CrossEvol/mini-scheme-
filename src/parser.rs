@@ -151,6 +151,7 @@ impl Parser {
             Token::List => Ok(Expr::Variable("list".to_string())),
             Token::Vector => Ok(Expr::Variable("vector".to_string())),
             Token::Display => Ok(Expr::Variable("display".to_string())),
+            Token::Newline => Ok(Expr::Variable("newline".to_string())),
             Token::Error => Ok(Expr::Variable("error".to_string())),
             Token::Values => Ok(Expr::Variable("values".to_string())),
             Token::ForEach => Ok(Expr::Variable("for-each".to_string())),

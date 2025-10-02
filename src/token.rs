@@ -36,6 +36,7 @@ pub enum Token {
     List,
     Vector,
     Display,
+    Newline,
     Error,
     Values,
     ForEach,
@@ -178,7 +179,7 @@ impl TokenInfo {
         matches!(
             self.token,
             Token::Car | Token::Cdr | Token::Cons | Token::List | Token::Vector
-            | Token::Display | Token::Error | Token::Values | Token::ForEach
+            | Token::Display | Token::Newline | Token::Error | Token::Values | Token::ForEach
             | Token::NullQ | Token::PairQ | Token::NumberQ | Token::StringQ 
             | Token::BooleanQ | Token::CharQ
             | Token::MakeHashtable | Token::HashtableSet | Token::HashtableRef | Token::HashtableDelete
@@ -234,6 +235,7 @@ impl fmt::Display for Token {
             Token::List => write!(f, "list"),
             Token::Vector => write!(f, "vector"),
             Token::Display => write!(f, "display"),
+            Token::Newline => write!(f, "newline"),
             Token::Error => write!(f, "error"),
             Token::Values => write!(f, "values"),
             Token::ForEach => write!(f, "for-each"),

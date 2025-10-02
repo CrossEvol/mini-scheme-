@@ -532,6 +532,7 @@ impl Disassembler {
                         crate::object::Object::Cons(_) => print!("<cons>"),
                         crate::object::Object::Vector(_) => print!("<vector>"),
                         crate::object::Object::Hashtable(_) => print!("<hashtable>"),
+                        crate::object::Object::Builtin(builtin) => print!("<builtin {}>", builtin.name),
                         crate::object::Object::Upvalue(_) => print!("<upvalue>"),
                     }
                 } else {
@@ -600,6 +601,7 @@ impl Disassembler {
                         crate::object::Object::Cons(_) => "<cons>".to_string(),
                         crate::object::Object::Vector(_) => "<vector>".to_string(),
                         crate::object::Object::Hashtable(_) => "<hashtable>".to_string(),
+                        crate::object::Object::Builtin(builtin) => format!("<builtin {}>", builtin.name),
                         crate::object::Object::Upvalue(_) => "<upvalue>".to_string(),
                     }
                 } else {

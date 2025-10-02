@@ -25,6 +25,14 @@ pub enum Object {
     Function(Function),
     Closure(Closure),
     Upvalue(Upvalue),
+    Builtin(BuiltinFunction),
+}
+
+/// Built-in function representation
+#[derive(Debug, Clone)]
+pub struct BuiltinFunction {
+    pub name: String,
+    pub arity: usize,
 }
 
 /// Cons cell - the fundamental building block for Scheme lists
@@ -187,6 +195,11 @@ impl Value {
         Value::Object(Rc::new(RefCell::new(Object::Closure(closure))))
     }
 
+    /// Create a new built-in function value
+    pub fn builtin(name: String, arity: usize) -> Self {
+        Value::Object(Rc::new(RefCell::new(Object::Builtin(BuiltinFunction { name, arity }))))
+    }
+
     // Type checking methods
     
     /// Check if this value is a number
@@ -268,9 +281,17 @@ impl Value {
         }
     }
 
-    /// Check if this value is callable (function or closure)
+    /// Check if this value is a built-in function
+    pub fn is_builtin(&self) -> bool {
+        match self {
+            Value::Object(obj) => matches!(*obj.borrow(), Object::Builtin(_)),
+            _ => false,
+        }
+    }
+
+    /// Check if this value is callable (function, closure, or built-in)
     pub fn is_callable(&self) -> bool {
-        self.is_function() || self.is_closure()
+        self.is_function() || self.is_closure() || self.is_builtin()
     }
 
     // Safe value extraction methods
@@ -369,6 +390,19 @@ impl Value {
         }
     }
 
+    /// Extract built-in function, returns None if not a built-in
+    pub fn as_builtin(&self) -> Option<BuiltinFunction> {
+        match self {
+            Value::Object(obj) => {
+                match &*obj.borrow() {
+                    Object::Builtin(builtin) => Some(builtin.clone()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Check if this value is truthy (everything except #f is truthy in Scheme)
     pub fn is_truthy(&self) -> bool {
         match self {
@@ -436,6 +470,7 @@ impl fmt::Display for Value {
                     Object::Hashtable(_) => write!(f, "#<hashtable>"),
                     Object::Function(_func) => write!(f, "#<procedure>"),
                     Object::Closure(_closure) => write!(f, "#<procedure>"),
+                    Object::Builtin(_builtin) => write!(f, "#<procedure>"),
                     Object::Upvalue(_) => write!(f, "#<upvalue>"),
                 }
             }
@@ -638,6 +673,10 @@ mod tests {
         let closure_val = Value::closure(closure);
         assert!(closure_val.is_closure());
         assert!(closure_val.is_callable());
+
+        let builtin_val = Value::builtin("display".to_string(), 1);
+        assert!(builtin_val.is_builtin());
+        assert!(builtin_val.is_callable());
     }
 
     #[test]
