@@ -108,7 +108,7 @@ const FRAMES_MAX: usize = 64;
 impl VM {
     /// Create a new virtual machine
     pub fn new() -> Self {
-        VM {
+        let mut vm = VM {
             stack: Vec::with_capacity(STACK_MAX),
             stack_top: 0,
             frames: Vec::with_capacity(FRAMES_MAX),
@@ -118,7 +118,22 @@ impl VM {
             trace_execution: false,
             tracer: None,
             output_produced: false,
-        }
+        };
+        
+        // Initialize built-in functions in global environment
+        vm.init_builtins();
+        vm
+    }
+
+    /// Initialize built-in functions in the global environment
+    fn init_builtins(&mut self) {
+        // Add hash functions as first-class values
+        self.globals.insert("string-hash".to_string(), Value::builtin("string-hash".to_string(), 1));
+        self.globals.insert("equal-hash".to_string(), Value::builtin("equal-hash".to_string(), 1));
+        
+        // Add equality functions
+        self.globals.insert("string=?".to_string(), Value::builtin("string=?".to_string(), 2));
+        self.globals.insert("equal?".to_string(), Value::builtin("equal?".to_string(), 2));
     }
 
     /// Reset the VM to initial state
@@ -133,6 +148,8 @@ impl VM {
         if let Some(tracer) = &mut self.tracer {
             tracer.clear_traces();
         }
+        // Re-initialize built-ins after reset
+        self.init_builtins();
     }
 
     /// Enable execution tracing
@@ -803,6 +820,13 @@ impl VM {
                     Ok(())
                 }
 
+                OpCode::OP_HASHTABLE_Q => {
+                    let value = self.pop()?;
+                    let result = value.is_hashtable();
+                    self.push(Value::Boolean(result))?;
+                    Ok(())
+                }
+
                 OpCode::OP_EQ_Q => {
                     let b = self.pop()?;
                     let a = self.pop()?;
@@ -1353,6 +1377,14 @@ impl VM {
             "vector-length" => self.builtin_vector_length(arg_count),
             "vector-ref" => self.builtin_vector_ref(arg_count),
             "vector-set!" => self.builtin_vector_set(arg_count),
+            "make-hashtable" => self.builtin_make_hashtable(arg_count),
+            "hashtable?" => self.builtin_hashtable_q(arg_count),
+            "hashtable-ref" => self.builtin_hashtable_ref(arg_count),
+            "hashtable-set!" => self.builtin_hashtable_set(arg_count),
+            "string-hash" => self.builtin_string_hash(arg_count),
+            "equal-hash" => self.builtin_equal_hash(arg_count),
+            "string=?" => self.builtin_string_eq_q(arg_count),
+            "equal?" => self.builtin_equal_q(arg_count),
             _ => Err(RuntimeError::InvalidOperation(format!(
                 "Unknown built-in function: {}",
                 name
@@ -2279,6 +2311,385 @@ impl VM {
                 "No active call frame".to_string(),
             ))
         }
+    }
+
+    /// Implement the make-hashtable built-in function
+    fn builtin_make_hashtable(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        // For now, we'll accept 0, 1, or 2 arguments (hash function and equality function)
+        // but we'll ignore them and create a simple string-keyed hashtable
+        if arg_count > 2 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 2,
+                got: arg_count,
+            });
+        }
+
+        // Pop any arguments (we ignore them for now)
+        for _ in 0..arg_count {
+            self.pop()?;
+        }
+
+        // Create an empty hashtable
+        let hashtable = std::collections::HashMap::new();
+        let hashtable_value = Value::hashtable(hashtable);
+        self.push(hashtable_value)?;
+        Ok(())
+    }
+
+    /// Implement the hashtable? built-in function
+    fn builtin_hashtable_q(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let value = self.pop()?;
+        let result = Value::Boolean(value.is_hashtable());
+        self.push(result)?;
+        Ok(())
+    }
+
+    /// Implement the hashtable-ref built-in function
+    fn builtin_hashtable_ref(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 2 && arg_count != 3 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 2, // or 3 with default value
+                got: arg_count,
+            });
+        }
+
+        // Arguments on stack: [hashtable, key] or [hashtable, key, default]
+        let default_value = if arg_count == 3 {
+            Some(self.pop()?)
+        } else {
+            None
+        };
+        let key = self.pop()?;
+        let hashtable = self.pop()?;
+
+        // Convert key to string (for now, we only support string keys)
+        let key_str = match &key {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => s.clone(),
+                        crate::object::Object::Symbol(s) => s.clone(),
+                        _ => format!("{}", key),
+                    }
+                } else {
+                    format!("{}", key)
+                }
+            }
+            _ => format!("{}", key),
+        };
+
+        // Look up the value in the hashtable
+        match &hashtable {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    if let Object::Hashtable(map) = &*obj_ref {
+                        if let Some(value) = map.get(&key_str) {
+                            self.push(value.clone())?;
+                        } else if let Some(default) = default_value {
+                            self.push(default)?;
+                        } else {
+                            // No default provided and key not found - this is an error in Scheme
+                            return Err(RuntimeError::InvalidOperation(format!(
+                                "Key '{}' not found in hashtable",
+                                key_str
+                            )));
+                        }
+                    } else {
+                        return Err(RuntimeError::TypeError {
+                            expected: "hashtable".to_string(),
+                            got: self.type_name(&hashtable),
+                        });
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow hashtable object".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "hashtable".to_string(),
+                    got: self.type_name(&hashtable),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Implement the hashtable-set! built-in function
+    fn builtin_hashtable_set(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 3 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 3,
+                got: arg_count,
+            });
+        }
+
+        // Arguments on stack: [hashtable, key, value]
+        let value = self.pop()?;
+        let key = self.pop()?;
+        let hashtable = self.pop()?;
+
+        // Convert key to string (for now, we only support string keys)
+        let key_str = match &key {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => s.clone(),
+                        crate::object::Object::Symbol(s) => s.clone(),
+                        _ => format!("{}", key),
+                    }
+                } else {
+                    format!("{}", key)
+                }
+            }
+            _ => format!("{}", key),
+        };
+
+        // Set the value in the hashtable
+        match &hashtable {
+            Value::Object(obj) => {
+                if let Ok(mut obj_ref) = obj.try_borrow_mut() {
+                    if let Object::Hashtable(map) = &mut *obj_ref {
+                        map.insert(key_str, value);
+                        // hashtable-set! returns unspecified value (we'll use nil)
+                        self.push(Value::Nil)?;
+                    } else {
+                        return Err(RuntimeError::TypeError {
+                            expected: "hashtable".to_string(),
+                            got: self.type_name(&hashtable),
+                        });
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow hashtable object mutably".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "hashtable".to_string(),
+                    got: self.type_name(&hashtable),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Implement the string-hash built-in function
+    fn builtin_string_hash(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let value = self.pop()?;
+        
+        // Convert to string and compute a simple hash
+        let string_val = match &value {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => s.clone(),
+                        _ => {
+                            return Err(RuntimeError::TypeError {
+                                expected: "string".to_string(),
+                                got: self.type_name(&value),
+                            });
+                        }
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow string object".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "string".to_string(),
+                    got: self.type_name(&value),
+                });
+            }
+        };
+
+        // Simple hash function (djb2 algorithm)
+        let mut hash: u32 = 5381;
+        for byte in string_val.bytes() {
+            hash = hash.wrapping_mul(33).wrapping_add(byte as u32);
+        }
+
+        // Return hash as a number
+        self.push(Value::Number(hash as f64))?;
+        Ok(())
+    }
+
+    /// Implement the equal-hash built-in function
+    fn builtin_equal_hash(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let value = self.pop()?;
+        
+        // Compute hash based on value type
+        let hash = match &value {
+            Value::Number(n) => {
+                // Hash the bits of the number
+                let bits = n.to_bits();
+                bits as u32
+            }
+            Value::Boolean(b) => {
+                if *b { 1 } else { 0 }
+            }
+            Value::Nil => 0,
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => {
+                            // Use same hash as string-hash
+                            let mut hash: u32 = 5381;
+                            for byte in s.bytes() {
+                                hash = hash.wrapping_mul(33).wrapping_add(byte as u32);
+                            }
+                            hash
+                        }
+                        crate::object::Object::Character(c) => {
+                            *c as u32
+                        }
+                        crate::object::Object::Symbol(s) => {
+                            // Hash symbols like strings
+                            let mut hash: u32 = 5381;
+                            for byte in s.bytes() {
+                                hash = hash.wrapping_mul(33).wrapping_add(byte as u32);
+                            }
+                            hash
+                        }
+                        _ => {
+                            // For other objects, use a simple hash based on type
+                            match &*obj_ref {
+                                crate::object::Object::Cons(_) => 1001,
+                                crate::object::Object::Vector(_) => 1002,
+                                crate::object::Object::Hashtable(_) => 1003,
+                                crate::object::Object::Function(_) => 1004,
+                                crate::object::Object::Closure(_) => 1005,
+                                crate::object::Object::Builtin(_) => 1006,
+                                crate::object::Object::Upvalue(_) => 1007,
+                                _ => 1000,
+                            }
+                        }
+                    }
+                } else {
+                    1000 // Default hash for unborrowed objects
+                }
+            }
+        };
+
+        // Return hash as a number
+        self.push(Value::Number(hash as f64))?;
+        Ok(())
+    }
+
+    /// Implement the equal? built-in function
+    fn builtin_equal_q(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 2 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 2,
+                got: arg_count,
+            });
+        }
+
+        let b = self.pop()?;
+        let a = self.pop()?;
+        
+        // Use the equal method from Value
+        let result = a.equal(&b);
+        self.push(Value::Boolean(result))?;
+        Ok(())
+    }
+
+    /// Implement the string=? built-in function
+    fn builtin_string_eq_q(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 2 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 2,
+                got: arg_count,
+            });
+        }
+
+        let b = self.pop()?;
+        let a = self.pop()?;
+        
+        // Both values must be strings
+        let string_a = match &a {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => s.clone(),
+                        _ => {
+                            return Err(RuntimeError::TypeError {
+                                expected: "string".to_string(),
+                                got: self.type_name(&a),
+                            });
+                        }
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow string object".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "string".to_string(),
+                    got: self.type_name(&a),
+                });
+            }
+        };
+
+        let string_b = match &b {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::String(s) => s.clone(),
+                        _ => {
+                            return Err(RuntimeError::TypeError {
+                                expected: "string".to_string(),
+                                got: self.type_name(&b),
+                            });
+                        }
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow string object".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "string".to_string(),
+                    got: self.type_name(&b),
+                });
+            }
+        };
+
+        // Compare the strings
+        let result = string_a == string_b;
+        self.push(Value::Boolean(result))?;
+        Ok(())
     }
 
     /// Get the type name of a value for error messages

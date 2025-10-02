@@ -66,15 +66,17 @@ pub enum OpCode {
     OP_STRING_Q = 37,    // string? predicate
     OP_BOOLEAN_Q = 38,   // boolean? predicate
     OP_CHAR_Q = 39,      // char? predicate
+    OP_HASHTABLE_Q = 40, // hashtable? predicate
+    
     
     // Comparison operations
-    OP_EQ_Q = 40,        // eq? predicate
-    OP_STRING_EQ_Q = 41, // string=? predicate
-    OP_CHAR_EQ_Q = 42,   // char=? predicate
+    OP_EQ_Q = 41,        // eq? predicate
+    OP_STRING_EQ_Q = 42, // string=? predicate
+    OP_CHAR_EQ_Q = 43,   // char=? predicate
     
     // Character predicates
-    OP_CHAR_NUMERIC_Q = 43,    // char-numeric? predicate
-    OP_CHAR_WHITESPACE_Q = 44, // char-whitespace? predicate
+    OP_CHAR_NUMERIC_Q = 44,    // char-numeric? predicate
+    OP_CHAR_WHITESPACE_Q = 45, // char-whitespace? predicate
 }
 
 impl OpCode {
@@ -121,11 +123,12 @@ impl OpCode {
             37 => Some(OpCode::OP_STRING_Q),
             38 => Some(OpCode::OP_BOOLEAN_Q),
             39 => Some(OpCode::OP_CHAR_Q),
-            40 => Some(OpCode::OP_EQ_Q),
-            41 => Some(OpCode::OP_STRING_EQ_Q),
-            42 => Some(OpCode::OP_CHAR_EQ_Q),
-            43 => Some(OpCode::OP_CHAR_NUMERIC_Q),
-            44 => Some(OpCode::OP_CHAR_WHITESPACE_Q),
+            40 => Some(OpCode::OP_HASHTABLE_Q),
+            41 => Some(OpCode::OP_EQ_Q),
+            42 => Some(OpCode::OP_STRING_EQ_Q),
+            43 => Some(OpCode::OP_CHAR_EQ_Q),
+            44 => Some(OpCode::OP_CHAR_NUMERIC_Q),
+            45 => Some(OpCode::OP_CHAR_WHITESPACE_Q),
             _ => None,
         }
     }
@@ -147,7 +150,7 @@ impl OpCode {
             OpCode::OP_CONS | OpCode::OP_CAR | OpCode::OP_CDR |
             OpCode::OP_MAKE_HASHTABLE | OpCode::OP_NULL_Q | OpCode::OP_PAIR_Q |
             OpCode::OP_NUMBER_Q | OpCode::OP_STRING_Q | OpCode::OP_BOOLEAN_Q |
-            OpCode::OP_CHAR_Q | OpCode::OP_EQ_Q | OpCode::OP_STRING_EQ_Q |
+            OpCode::OP_CHAR_Q | OpCode::OP_HASHTABLE_Q | OpCode::OP_EQ_Q | OpCode::OP_STRING_EQ_Q |
             OpCode::OP_CHAR_EQ_Q | OpCode::OP_CHAR_NUMERIC_Q | OpCode::OP_CHAR_WHITESPACE_Q => 1,
 
             // Instructions with 1-byte operand (2 bytes total)
@@ -217,6 +220,7 @@ impl OpCode {
             OpCode::OP_STRING_Q => "OP_STRING_Q",
             OpCode::OP_BOOLEAN_Q => "OP_BOOLEAN_Q",
             OpCode::OP_CHAR_Q => "OP_CHAR_Q",
+            OpCode::OP_HASHTABLE_Q => "OP_HASHTABLE_Q",
             OpCode::OP_EQ_Q => "OP_EQ_Q",
             OpCode::OP_STRING_EQ_Q => "OP_STRING_EQ_Q",
             OpCode::OP_CHAR_EQ_Q => "OP_CHAR_EQ_Q",
@@ -401,7 +405,7 @@ impl Disassembler {
             OpCode::OP_CONS | OpCode::OP_CAR | OpCode::OP_CDR |
             OpCode::OP_MAKE_HASHTABLE | OpCode::OP_NULL_Q | OpCode::OP_PAIR_Q |
             OpCode::OP_NUMBER_Q | OpCode::OP_STRING_Q | OpCode::OP_BOOLEAN_Q |
-            OpCode::OP_CHAR_Q | OpCode::OP_EQ_Q | OpCode::OP_STRING_EQ_Q |
+            OpCode::OP_CHAR_Q | OpCode::OP_HASHTABLE_Q | OpCode::OP_EQ_Q | OpCode::OP_STRING_EQ_Q |
             OpCode::OP_CHAR_EQ_Q | OpCode::OP_CHAR_NUMERIC_Q | OpCode::OP_CHAR_WHITESPACE_Q => {
                 self.simple_instruction(opcode.name(), offset)
             }
@@ -628,12 +632,14 @@ mod tests {
         assert_eq!(OpCode::from_byte(0), Some(OpCode::OP_CONSTANT));
         assert_eq!(OpCode::from_byte(1), Some(OpCode::OP_NIL));
         assert_eq!(OpCode::from_byte(33), Some(OpCode::OP_MAKE_HASHTABLE));
+        assert_eq!(OpCode::from_byte(40), Some(OpCode::OP_HASHTABLE_Q));
         assert_eq!(OpCode::from_byte(255), None);
 
         // Test opcode to byte conversion
         assert_eq!(OpCode::OP_CONSTANT.to_byte(), 0);
         assert_eq!(OpCode::OP_NIL.to_byte(), 1);
         assert_eq!(OpCode::OP_MAKE_HASHTABLE.to_byte(), 33);
+        assert_eq!(OpCode::OP_HASHTABLE_Q.to_byte(), 40);
     }
 
     #[test]

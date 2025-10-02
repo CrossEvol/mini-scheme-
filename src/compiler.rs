@@ -865,13 +865,22 @@ impl Compiler {
                     return Ok(());
                 }
                 "make-hashtable" => {
-                    if args.len() != 0 {
-                        return Err(CompileError::UndefinedVariable(format!(
-                            "make-hashtable expects 0 arguments, got {}",
-                            args.len()
-                        )));
+                    // make-hashtable can take 0, 1, or 2 arguments (hash function and equality function)
+                    if args.len() > 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
                     }
-                    self.emit_byte(OpCode::OP_MAKE_HASHTABLE, 1);
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("make-hashtable".to_string(), args.len());
+                    self.emit_constant(builtin_value)?;
+                    // Compile the arguments (if any)
+                    for arg in args {
+                        self.compile_expr(arg)?;
+                    }
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, args.len() as u8, 1);
                     return Ok(());
                 }
                 "+" => {
@@ -1022,6 +1031,55 @@ impl Compiler {
                     self.compile_expr(&args[0])?;
                     self.compile_expr(&args[1])?;
                     self.emit_byte(OpCode::OP_STRING_EQ_Q, 1);
+                    return Ok(());
+                }
+                "string-hash" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("string-hash".to_string(), 1);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the argument
+                    self.compile_expr(&args[0])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 1, 1);
+                    return Ok(());
+                }
+                "equal-hash" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("equal-hash".to_string(), 1);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the argument
+                    self.compile_expr(&args[0])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 1, 1);
+                    return Ok(());
+                }
+                "equal?" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("equal?".to_string(), 2);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the arguments
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 2, 1);
                     return Ok(());
                 }
                 "char=?" => {
@@ -1244,6 +1302,58 @@ impl Compiler {
                     }
                     // Push the built-in function onto the stack
                     let builtin_value = crate::object::Value::builtin("vector-set!".to_string(), 3);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the arguments
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.compile_expr(&args[2])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 3, 1);
+                    return Ok(());
+                }
+                "hashtable?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("hashtable?".to_string(), 1);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the argument
+                    self.compile_expr(&args[0])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 1, 1);
+                    return Ok(());
+                }
+                "hashtable-ref" => {
+                    if args.len() != 2 && args.len() != 3 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2, // or 3 with default value
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("hashtable-ref".to_string(), args.len());
+                    self.emit_constant(builtin_value)?;
+                    // Compile the arguments
+                    for arg in args {
+                        self.compile_expr(arg)?;
+                    }
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, args.len() as u8, 1);
+                    return Ok(());
+                }
+                "hashtable-set!" => {
+                    if args.len() != 3 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 3,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("hashtable-set!".to_string(), 3);
                     self.emit_constant(builtin_value)?;
                     // Compile the arguments
                     self.compile_expr(&args[0])?;
