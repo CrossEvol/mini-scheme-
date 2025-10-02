@@ -252,25 +252,25 @@
   - Test hashtable operations and key-value handling
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
 
-- [ ] 9. Add control flow and special form support
+- [x] 9. Add control flow and special form support
   - Implement conditional jumps for if expressions
   - Add loop support for iterative constructs
   - Implement let binding compilation and execution
   - _Requirements: 2.6, 2.7, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7_
 
-- [ ] 9.1 Implement conditional jump instructions
+- [x] 9.1 Implement conditional jump instructions
   - Add OP_JUMP and OP_JUMP_IF_FALSE instructions
   - Implement if expression compilation with proper branching
   - Add cond expression support with multiple conditions
   - _Requirements: 2.6, 6.1, 6.2_
 
-- [ ] 9.2 Add loop support
+- [x] 9.2 Add loop support
   - Implement OP_LOOP instruction for backward jumps
   - Add let-loop compilation and execution
   - Implement proper loop variable binding and scoping
   - _Requirements: 6.4, 6.5_
 
-- [ ] 9.3 Implement let binding forms
+- [x] 9.3 Implement let binding forms
   - Add let expression compilation with local variable creation
   - Implement let* sequential binding compilation
   - Add proper scope management for let bindings

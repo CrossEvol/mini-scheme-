@@ -279,7 +279,10 @@ impl VM {
         let main_closure = crate::object::Closure::new(Rc::new(main_function));
         let main_closure_rc = Rc::new(main_closure);
 
-        // Create the initial call frame
+        // Push the main function onto the stack (slot 0)
+        self.push(Value::closure((*main_closure_rc).clone()))?;
+
+        // Create the initial call frame with slots starting at 0
         self.push_frame(main_closure_rc, 0)?;
 
         // Run the main execution loop
@@ -695,6 +698,48 @@ impl VM {
                     Ok(())
                 }
 
+                OpCode::OP_JUMP => {
+                    let jump_distance = self.read_short()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push((jump_distance >> 8) as u8);
+                        trace.operands.push(jump_distance as u8);
+                    }
+                    let frame = &mut self.frames[self.frame_count - 1];
+                    frame.ip += jump_distance;
+                    Ok(())
+                }
+
+                OpCode::OP_JUMP_IF_FALSE => {
+                    let jump_distance = self.read_short()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push((jump_distance >> 8) as u8);
+                        trace.operands.push(jump_distance as u8);
+                    }
+                    let condition = self.peek(0)?;
+                    if condition.is_falsy() {
+                        let frame = &mut self.frames[self.frame_count - 1];
+                        frame.ip += jump_distance;
+                    }
+                    Ok(())
+                }
+
+                OpCode::OP_LOOP => {
+                    let jump_distance = self.read_short()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push((jump_distance >> 8) as u8);
+                        trace.operands.push(jump_distance as u8);
+                    }
+                    let frame = &mut self.frames[self.frame_count - 1];
+                    if frame.ip >= jump_distance {
+                        frame.ip -= jump_distance;
+                    } else {
+                        return Err(RuntimeError::InvalidOperation(
+                            "Invalid loop jump".to_string(),
+                        ));
+                    }
+                    Ok(())
+                }
+
                 _ => Err(RuntimeError::InvalidOperation(format!(
                     "Unimplemented opcode: {:?}",
                     opcode
@@ -727,6 +772,13 @@ impl VM {
         let byte = chunk.code[frame.ip];
         frame.ip += 1;
         Ok(byte)
+    }
+
+    /// Read a 2-byte short from the current instruction stream (big-endian)
+    fn read_short(&mut self) -> Result<u16, RuntimeError> {
+        let high = self.read_byte()? as u16;
+        let low = self.read_byte()? as u16;
+        Ok((high << 8) | low)
     }
 
     /// Read a constant from the constant pool

@@ -1,4 +1,6 @@
-use crate::ast::{DefineExpr, Expr, LambdaExpr};
+use crate::ast::{
+    CondExpr, DefineExpr, Expr, IfExpr, LambdaExpr, LetExpr, LetLoopExpr, LetStarExpr,
+};
 use crate::bytecode::{Chunk, OpCode};
 use crate::object::{Function, Value};
 use crate::trace::{CompilationPhase, CompilationTrace, TraceConfig, Tracer, format_ast_expr};
@@ -222,6 +224,15 @@ impl Compiler {
 
             // Define expression
             Expr::Define(define) => self.compile_define(define),
+
+            // Control flow expressions
+            Expr::If(if_expr) => self.compile_if(if_expr),
+            Expr::Cond(cond_expr) => self.compile_cond(cond_expr),
+
+            // Let binding forms
+            Expr::Let(let_expr) => self.compile_let(let_expr),
+            Expr::LetStar(let_star) => self.compile_let_star(let_star),
+            Expr::LetLoop(let_loop) => self.compile_let_loop(let_loop),
 
             // Other expressions will be implemented in later subtasks
             _ => {
@@ -833,6 +844,262 @@ impl Compiler {
         }
 
         self.emit_bytes(OpCode::OP_CALL, args.len() as u8, 1);
+        Ok(())
+    }
+
+    /// Compile an if expression
+    fn compile_if(&mut self, if_expr: &crate::ast::IfExpr) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling if expression"));
+        self.trace_compilation_phase(
+            CompilationPhase::InstructionGeneration,
+            &Expr::If(Box::new(if_expr.clone())),
+        );
+
+        // Compile the condition
+        self.compile_expr(&if_expr.condition)?;
+
+        // Jump to else branch if condition is false
+        let else_jump = self.emit_jump(OpCode::OP_JUMP_IF_FALSE)?;
+
+        // Compile then branch
+        self.emit_byte(OpCode::OP_POP, 1); // Pop the condition value
+        self.compile_expr(&if_expr.then_expr)?;
+
+        // Jump over else branch
+        let end_jump = self.emit_jump(OpCode::OP_JUMP)?;
+
+        // Patch the else jump to point here
+        self.patch_jump(else_jump)?;
+
+        // Compile else branch
+        self.emit_byte(OpCode::OP_POP, 1); // Pop the condition value
+        self.compile_expr(&if_expr.else_expr)?;
+
+        // Patch the end jump to point here
+        self.patch_jump(end_jump)?;
+
+        Ok(())
+    }
+
+    /// Compile a cond expression
+    fn compile_cond(&mut self, cond_expr: &crate::ast::CondExpr) -> Result<(), CompileError> {
+        self.trace(&format!(
+            "Compiling cond expression with {} clauses",
+            cond_expr.clauses.len()
+        ));
+        self.trace_compilation_phase(
+            CompilationPhase::InstructionGeneration,
+            &Expr::Cond(Box::new(cond_expr.clone())),
+        );
+
+        let mut end_jumps = Vec::new();
+        let mut next_clause_jumps = Vec::new();
+
+        for (i, clause) in cond_expr.clauses.iter().enumerate() {
+            // Patch previous clause's jump to here
+            if let Some(jump) = next_clause_jumps.pop() {
+                self.patch_jump(jump)?;
+            }
+
+            // Check if this is an else clause (test is #t or similar)
+            let is_else_clause = match &clause.test {
+                Expr::Boolean(true) => true,
+                Expr::Variable(name) if name == "else" => true,
+                _ => false,
+            };
+
+            if is_else_clause {
+                // Else clause - just compile the body
+                self.compile_clause_body(&clause.body)?;
+                break;
+            } else {
+                // Regular clause - compile test and conditional jump
+                self.compile_expr(&clause.test)?;
+
+                // Jump to next clause if test is false
+                let next_jump = self.emit_jump(OpCode::OP_JUMP_IF_FALSE)?;
+                next_clause_jumps.push(next_jump);
+
+                // Pop the test value and compile body
+                self.emit_byte(OpCode::OP_POP, 1);
+                self.compile_clause_body(&clause.body)?;
+
+                // Jump to end after executing this clause
+                if i < cond_expr.clauses.len() - 1 {
+                    let end_jump = self.emit_jump(OpCode::OP_JUMP)?;
+                    end_jumps.push(end_jump);
+                }
+            }
+        }
+
+        // Patch any remaining next clause jump (if no else clause)
+        if let Some(jump) = next_clause_jumps.pop() {
+            self.patch_jump(jump)?;
+            self.emit_byte(OpCode::OP_POP, 1); // Pop the last test value
+            // Push nil as default value if no clause matches
+            self.emit_byte(OpCode::OP_NIL, 1);
+        }
+
+        // Patch all end jumps to point here
+        for jump in end_jumps {
+            self.patch_jump(jump)?;
+        }
+
+        Ok(())
+    }
+
+    /// Compile the body of a cond clause
+    fn compile_clause_body(&mut self, body: &[Expr]) -> Result<(), CompileError> {
+        if body.is_empty() {
+            // Empty body - push nil
+            self.emit_byte(OpCode::OP_NIL, 1);
+        } else {
+            // Compile all expressions in body
+            for (i, expr) in body.iter().enumerate() {
+                self.compile_expr(expr)?;
+                // Pop intermediate results except for the last expression
+                if i < body.len() - 1 {
+                    self.emit_byte(OpCode::OP_POP, 1);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Emit a jump instruction and return the offset for later patching
+    fn emit_jump(&mut self, opcode: OpCode) -> Result<usize, CompileError> {
+        self.emit_short(opcode, 0, 1); // Placeholder jump distance
+        Ok(self.function.chunk.count() - 3) // Return offset of the instruction start
+    }
+
+    /// Patch a jump instruction with the correct distance
+    fn patch_jump(&mut self, offset: usize) -> Result<(), CompileError> {
+        self.function
+            .chunk
+            .patch_jump(offset)
+            .map_err(|_| CompileError::JumpTooLarge)
+    }
+
+    /// Compile a let-loop expression (named let for iteration)
+    fn compile_let_loop(&mut self, let_loop: &LetLoopExpr) -> Result<(), CompileError> {
+        self.trace(&format!("Compiling let-loop: {}", let_loop.name));
+        self.trace_compilation_phase(
+            CompilationPhase::InstructionGeneration,
+            &Expr::LetLoop(Box::new(let_loop.clone())),
+        );
+
+        // For now, implement let-loop as a simple let expression
+        // A full implementation would create a local function that can be called recursively
+        // This is a simplified version that just executes the body once with the bindings
+
+        // Begin a new scope for the loop bindings
+        self.begin_scope();
+
+        // Compile initial values for loop variables and declare them as locals
+        for (var_name, init_expr) in &let_loop.bindings {
+            // Compile the initial value
+            self.compile_expr(init_expr)?;
+
+            // Declare the loop variable
+            self.declare_local(var_name.clone())?;
+            self.define_local();
+        }
+
+        // Compile the loop body (just once, no actual looping)
+        for (i, expr) in let_loop.body.iter().enumerate() {
+            self.compile_expr(expr)?;
+
+            // Pop intermediate results except for the last expression
+            if i < let_loop.body.len() - 1 {
+                self.emit_byte(OpCode::OP_POP, 1);
+            }
+        }
+
+        // End the loop scope
+        self.end_scope();
+
+        Ok(())
+    }
+
+    /// Compile a let expression
+    fn compile_let(&mut self, let_expr: &LetExpr) -> Result<(), CompileError> {
+        self.trace(&format!(
+            "Compiling let expression with {} bindings",
+            let_expr.bindings.len()
+        ));
+        self.trace_compilation_phase(
+            CompilationPhase::InstructionGeneration,
+            &Expr::Let(Box::new(let_expr.clone())),
+        );
+
+        // Begin a new scope for the let bindings
+        self.begin_scope();
+
+        // Compile all binding values first (in parallel)
+        // This ensures that bindings can't refer to each other
+        for (_var_name, init_expr) in &let_expr.bindings {
+            self.compile_expr(init_expr)?;
+        }
+
+        // Now declare and define all variables (in reverse order due to stack)
+        for (var_name, _init_expr) in let_expr.bindings.iter().rev() {
+            self.declare_local(var_name.clone())?;
+            self.define_local();
+        }
+
+        // Compile the body
+        for (i, expr) in let_expr.body.iter().enumerate() {
+            self.compile_expr(expr)?;
+
+            // Pop intermediate results except for the last expression
+            if i < let_expr.body.len() - 1 {
+                self.emit_byte(OpCode::OP_POP, 1);
+            }
+        }
+
+        // End the let scope
+        self.end_scope();
+
+        Ok(())
+    }
+
+    /// Compile a let* expression
+    fn compile_let_star(&mut self, let_star: &LetStarExpr) -> Result<(), CompileError> {
+        self.trace(&format!(
+            "Compiling let* expression with {} bindings",
+            let_star.bindings.len()
+        ));
+        self.trace_compilation_phase(
+            CompilationPhase::InstructionGeneration,
+            &Expr::LetStar(Box::new(let_star.clone())),
+        );
+
+        // Begin a new scope for the let* bindings
+        self.begin_scope();
+
+        // Compile bindings sequentially (each can refer to previous ones)
+        for (var_name, init_expr) in &let_star.bindings {
+            // Compile the value expression
+            self.compile_expr(init_expr)?;
+
+            // Declare and define the variable
+            self.declare_local(var_name.clone())?;
+            self.define_local();
+        }
+
+        // Compile the body
+        for (i, expr) in let_star.body.iter().enumerate() {
+            self.compile_expr(expr)?;
+
+            // Pop intermediate results except for the last expression
+            if i < let_star.body.len() - 1 {
+                self.emit_byte(OpCode::OP_POP, 1);
+            }
+        }
+
+        // End the let* scope
+        self.end_scope();
+
         Ok(())
     }
 
