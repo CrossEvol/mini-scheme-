@@ -444,34 +444,110 @@ impl Parser {
 
     // Special form parsers (simplified versions)
     fn parse_define(&mut self) -> Result<crate::ast::DefineExpr, ParseError> {
-        // Simplified define parser - just handle variable definitions for now
-        let name = match self.current_token() {
-            Some(token_info) => match &token_info.token {
-                Token::Identifier(name) => {
-                    let name = name.clone();
-                    self.advance();
-                    name
+        // Handle both variable and function definitions
+        match self.current_token() {
+            Some(token_info) => {
+                match &token_info.token {
+                    Token::Identifier(name) => {
+                        // Variable definition: (define name value)
+                        let name = name.clone();
+                        self.advance();
+                        let value = self.parse_expr()?;
+                        Ok(crate::ast::DefineExpr { name, value })
+                    }
+                    Token::LeftParen => {
+                        // Function definition: (define (name args...) body...)
+                        self.advance(); // consume '('
+
+                        // Parse function name
+                        let name = match self.current_token() {
+                            Some(token_info) => match &token_info.token {
+                                Token::Identifier(name) => {
+                                    let name = name.clone();
+                                    self.advance();
+                                    name
+                                }
+                                _ => {
+                                    return Err(ParseError::InvalidSpecialForm {
+                                        form: "define".to_string(),
+                                        reason: "function name must be an identifier".to_string(),
+                                        line: token_info.line,
+                                        column: token_info.column,
+                                        suggestion: Some(
+                                            "Use (define (function-name args...) body...)"
+                                                .to_string(),
+                                        ),
+                                    });
+                                }
+                            },
+                            None => {
+                                return Err(ParseError::UnexpectedEof {
+                                    expected: "function name".to_string(),
+                                    context: Some("define function expression".to_string()),
+                                });
+                            }
+                        };
+
+                        // Parse parameters
+                        let mut params = Vec::new();
+                        while let Some(token_info) = self.current_token() {
+                            if matches!(token_info.token, Token::RightParen) {
+                                break;
+                            }
+                            match &token_info.token {
+                                Token::Identifier(param) => {
+                                    params.push(param.clone());
+                                    self.advance();
+                                }
+                                _ => {
+                                    return Err(ParseError::InvalidSpecialForm {
+                                    form: "define".to_string(),
+                                    reason: "parameter must be an identifier".to_string(),
+                                    line: token_info.line,
+                                    column: token_info.column,
+                                    suggestion: Some("Use (define (function-name param1 param2 ...) body...)".to_string()),
+                                });
+                                }
+                            }
+                        }
+
+                        self.expect_token(Token::RightParen)?; // consume closing ')'
+
+                        // Parse function body (for now, just one expression)
+                        let body_expr = self.parse_expr()?;
+
+                        // Create a lambda expression as the value
+                        let lambda_expr = crate::ast::LambdaExpr {
+                            params,
+                            body: vec![body_expr],
+                        };
+
+                        Ok(crate::ast::DefineExpr {
+                            name,
+                            value: Expr::Lambda(Box::new(lambda_expr)),
+                        })
+                    }
+                    _ => {
+                        return Err(ParseError::InvalidSpecialForm {
+                            form: "define".to_string(),
+                            reason: "expected variable name or function definition".to_string(),
+                            line: token_info.line,
+                            column: token_info.column,
+                            suggestion: Some(
+                                "Use (define name value) or (define (name args...) body...)"
+                                    .to_string(),
+                            ),
+                        });
+                    }
                 }
-                _ => {
-                    return Err(ParseError::InvalidSpecialForm {
-                        form: "define".to_string(),
-                        reason: "variable name must be an identifier".to_string(),
-                        line: token_info.line,
-                        column: token_info.column,
-                        suggestion: Some("Use (define variable-name value)".to_string()),
-                    });
-                }
-            },
+            }
             None => {
                 return Err(ParseError::UnexpectedEof {
-                    expected: "variable name".to_string(),
+                    expected: "variable name or function definition".to_string(),
                     context: Some("define expression".to_string()),
                 });
             }
-        };
-
-        let value = self.parse_expr()?;
-        Ok(crate::ast::DefineExpr { name, value })
+        }
     }
 
     fn parse_lambda(&mut self) -> Result<crate::ast::LambdaExpr, ParseError> {
