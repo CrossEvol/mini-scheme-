@@ -747,7 +747,7 @@ impl Compiler {
             locals: Vec::new(),
             upvalues: Vec::new(),
             scope_depth: 0,
-            enclosing: None, // Simplified - no upvalue support yet
+            enclosing: None, // We'll handle recursion differently
             trace_enabled: self.trace_enabled,
             tracer: self.tracer.as_ref().map(|t| Tracer::new(t.config.clone())),
         };
@@ -1528,34 +1528,35 @@ impl Compiler {
             &Expr::LetLoop(Box::new(let_loop.clone())),
         );
 
-        // For now, implement let-loop as a simple let expression
-        // TODO: Implement proper recursion support
+        // For now, implement let-loop using a global variable approach
+        // This is a temporary solution until we have proper upvalue support
+        
+        let param_names: Vec<String> = let_loop.bindings.iter()
+            .map(|(name, _)| name.clone())
+            .collect();
 
-        // Begin a new scope for the loop bindings
-        self.begin_scope();
+        // Create the recursive function
+        let lambda_expr = LambdaExpr {
+            params: param_names.clone(),
+            body: let_loop.body.clone(),
+        };
 
-        // Compile initial values for loop variables and declare them as locals
-        for (var_name, init_expr) in &let_loop.bindings {
-            // Compile the initial value
+        // Define the function as a global variable so it can reference itself
+        self.compile_global_define(&let_loop.name, &Expr::Lambda(Box::new(lambda_expr)))?;
+
+        // Pop the nil that compile_global_define pushes
+        self.emit_byte(OpCode::OP_POP, 1);
+
+        // Get the global function first (it needs to be at the bottom of the call stack)
+        self.compile_global_get(&let_loop.name)?;
+
+        // Compile the initial values for the function call
+        for (_, init_expr) in &let_loop.bindings {
             self.compile_expr(init_expr)?;
-
-            // Declare the loop variable
-            self.declare_local(var_name.clone())?;
-            self.define_local();
         }
 
-        // Compile the loop body (just once, no actual looping for now)
-        for (i, expr) in let_loop.body.iter().enumerate() {
-            self.compile_expr(expr)?;
-
-            // Pop intermediate results except for the last expression
-            if i < let_loop.body.len() - 1 {
-                self.emit_byte(OpCode::OP_POP, 1);
-            }
-        }
-
-        // End the loop scope
-        self.end_scope();
+        // Call the function with the initial arguments
+        self.emit_bytes(OpCode::OP_CALL, param_names.len() as u8, 1);
 
         Ok(())
     }
