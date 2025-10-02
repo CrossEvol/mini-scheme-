@@ -1,6 +1,6 @@
 use crate::ast::{
-    CallWithValuesExpr, DefineExpr, Expr, ImportExpr, LambdaExpr, LetExpr, 
-    LetLoopExpr, LetStarExpr, LetValuesExpr, SetExpr,
+    CallWithValuesExpr, DefineExpr, Expr, ImportExpr, LambdaExpr, LetExpr, LetLoopExpr,
+    LetStarExpr, LetValuesExpr, SetExpr,
 };
 use crate::bytecode::{Chunk, OpCode};
 use crate::object::{Function, Value};
@@ -62,10 +62,16 @@ impl std::fmt::Display for CompileError {
                 write!(f, "Type error: expected {}, got {}", expected, got)
             }
             CompileError::ArityMismatch { expected, got } => {
-                write!(f, "Arity mismatch: expected {} arguments, got {}", expected, got)
+                write!(
+                    f,
+                    "Arity mismatch: expected {} arguments, got {}",
+                    expected, got
+                )
             }
             CompileError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
-            CompileError::NotImplemented(feature) => write!(f, "Feature not implemented: {}", feature),
+            CompileError::NotImplemented(feature) => {
+                write!(f, "Feature not implemented: {}", feature)
+            }
         }
     }
 }
@@ -265,7 +271,9 @@ impl Compiler {
             Expr::Vector(elements) => self.compile_vector_literal(elements),
 
             // Advanced forms
-            Expr::CallWithValues(call_with_values) => self.compile_call_with_values(call_with_values),
+            Expr::CallWithValues(call_with_values) => {
+                self.compile_call_with_values(call_with_values)
+            }
             Expr::Import(import) => self.compile_import(import),
         }
     }
@@ -524,6 +532,9 @@ impl Compiler {
         // Emit the define instruction
         let name_constant = self.add_constant(Value::string(name.to_string()))?;
         self.emit_bytes(OpCode::OP_DEFINE_GLOBAL, name_constant as u8, 1);
+
+        // Push nil to indicate no return value (define produces no output)
+        self.emit_byte(OpCode::OP_NIL, 1);
 
         Ok(())
     }
@@ -851,6 +862,66 @@ impl Compiler {
                     self.emit_byte(OpCode::OP_MAKE_HASHTABLE, 1);
                     return Ok(());
                 }
+                "+" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_ADD, 1);
+                    return Ok(());
+                }
+                "-" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_SUBTRACT, 1);
+                    return Ok(());
+                }
+                "*" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_MULTIPLY, 1);
+                    return Ok(());
+                }
+                "/" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_DIVIDE, 1);
+                    return Ok(());
+                }
+                "<" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.emit_byte(OpCode::OP_LESS, 1);
+                    return Ok(());
+                }
                 _ => {
                     // Fall through to regular function call
                 }
@@ -1017,8 +1088,7 @@ impl Compiler {
         );
 
         // For now, implement let-loop as a simple let expression
-        // A full implementation would create a local function that can be called recursively
-        // This is a simplified version that just executes the body once with the bindings
+        // TODO: Implement proper recursion support
 
         // Begin a new scope for the loop bindings
         self.begin_scope();
@@ -1033,7 +1103,7 @@ impl Compiler {
             self.define_local();
         }
 
-        // Compile the loop body (just once, no actual looping)
+        // Compile the loop body (just once, no actual looping for now)
         for (i, expr) in let_loop.body.iter().enumerate() {
             self.compile_expr(expr)?;
 
@@ -1069,8 +1139,10 @@ impl Compiler {
             self.compile_expr(init_expr)?;
         }
 
-        // Now declare and define all variables (in reverse order due to stack)
-        for (var_name, _init_expr) in let_expr.bindings.iter().rev() {
+        // Now declare and define all variables
+        // Stack layout: [value0, value1, value2, ...]
+        // Declare variables in forward order to match stack positions
+        for (var_name, _init_expr) in &let_expr.bindings {
             self.declare_local(var_name.clone())?;
             self.define_local();
         }
@@ -1164,23 +1236,23 @@ impl Compiler {
     /// Main compilation entry point that accepts an AST and compiles it to bytecode
     pub fn compile_ast(ast: &[Expr]) -> Result<Function, CompileError> {
         let mut compiler = Compiler::new_script();
-        
+
         // Compile all expressions in the AST
         for expr in ast {
             compiler.compile_expr(expr)?;
-            
+
             // For top-level expressions, we typically want to keep the result
             // Only pop if this is not the last expression
             if expr as *const _ != ast.last().unwrap() as *const _ {
                 compiler.emit_byte(OpCode::OP_POP, 1);
             }
         }
-        
+
         // If no expressions were compiled, push nil
         if ast.is_empty() {
             compiler.emit_byte(OpCode::OP_NIL, 1);
         }
-        
+
         Ok(compiler.end_compiler())
     }
 
@@ -1188,23 +1260,23 @@ impl Compiler {
     pub fn compile_ast_with_trace(ast: &[Expr], tracer: Tracer) -> Result<Function, CompileError> {
         let mut compiler = Compiler::new_script();
         compiler.set_tracer(tracer);
-        
+
         // Compile all expressions in the AST
         for expr in ast {
             compiler.compile_expr(expr)?;
-            
+
             // For top-level expressions, we typically want to keep the result
             // Only pop if this is not the last expression
             if expr as *const _ != ast.last().unwrap() as *const _ {
                 compiler.emit_byte(OpCode::OP_POP, 1);
             }
         }
-        
+
         // If no expressions were compiled, push nil
         if ast.is_empty() {
             compiler.emit_byte(OpCode::OP_NIL, 1);
         }
-        
+
         Ok(compiler.end_compiler())
     }
 
@@ -1213,7 +1285,7 @@ impl Compiler {
     /// Compile a let-values expression
     fn compile_let_values(&mut self, let_values: &LetValuesExpr) -> Result<(), CompileError> {
         self.trace("Compiling let-values expression");
-        
+
         // For now, implement a simplified version that doesn't handle multiple values
         // This would need proper multiple value support in the VM
         self.begin_scope();
@@ -1222,7 +1294,7 @@ impl Compiler {
         for (vars, expr) in &let_values.bindings {
             // Compile the expression
             self.compile_expr(expr)?;
-            
+
             // For simplicity, only bind the first variable if multiple are specified
             if let Some(first_var) = vars.first() {
                 self.declare_local(first_var.clone())?;
@@ -1274,7 +1346,7 @@ impl Compiler {
     /// Compile a quoted expression
     fn compile_quote(&mut self, quoted: &Expr) -> Result<(), CompileError> {
         self.trace("Compiling quote expression");
-        
+
         // Convert the quoted expression to a runtime value
         let quoted_value = self.expr_to_value(quoted)?;
         self.emit_constant(quoted_value)?;
@@ -1284,7 +1356,7 @@ impl Compiler {
     /// Compile a quasiquoted expression
     fn compile_quasiquote(&mut self, quasi: &Expr) -> Result<(), CompileError> {
         self.trace("Compiling quasiquote expression");
-        
+
         // For now, treat quasiquote like quote (simplified implementation)
         // A full implementation would handle unquote and unquote-splicing
         let quoted_value = self.expr_to_value(quasi)?;
@@ -1295,7 +1367,7 @@ impl Compiler {
     /// Compile an unquote expression
     fn compile_unquote(&mut self, unquoted: &Expr) -> Result<(), CompileError> {
         self.trace("Compiling unquote expression");
-        
+
         // Unquote should only appear inside quasiquote
         // For now, just compile the expression normally
         self.compile_expr(unquoted)
@@ -1304,7 +1376,7 @@ impl Compiler {
     /// Compile an unquote-splicing expression
     fn compile_unquote_splicing(&mut self, spliced: &Expr) -> Result<(), CompileError> {
         self.trace("Compiling unquote-splicing expression");
-        
+
         // Unquote-splicing should only appear inside quasiquote
         // For now, just compile the expression normally
         self.compile_expr(spliced)
@@ -1312,8 +1384,11 @@ impl Compiler {
 
     /// Compile a begin expression
     fn compile_begin(&mut self, exprs: &[Expr]) -> Result<(), CompileError> {
-        self.trace(&format!("Compiling begin expression with {} expressions", exprs.len()));
-        
+        self.trace(&format!(
+            "Compiling begin expression with {} expressions",
+            exprs.len()
+        ));
+
         if exprs.is_empty() {
             // Empty begin returns nil
             self.emit_byte(OpCode::OP_NIL, 1);
@@ -1334,8 +1409,11 @@ impl Compiler {
 
     /// Compile a list literal
     fn compile_list(&mut self, elements: &[Expr]) -> Result<(), CompileError> {
-        self.trace(&format!("Compiling list literal with {} elements", elements.len()));
-        
+        self.trace(&format!(
+            "Compiling list literal with {} elements",
+            elements.len()
+        ));
+
         if elements.is_empty() {
             // Empty list is nil
             self.emit_byte(OpCode::OP_NIL, 1);
@@ -1381,8 +1459,11 @@ impl Compiler {
 
     /// Compile a vector literal
     fn compile_vector_literal(&mut self, elements: &[Expr]) -> Result<(), CompileError> {
-        self.trace(&format!("Compiling vector literal with {} elements", elements.len()));
-        
+        self.trace(&format!(
+            "Compiling vector literal with {} elements",
+            elements.len()
+        ));
+
         // Compile all elements
         for element in elements {
             self.compile_expr(element)?;
@@ -1392,35 +1473,38 @@ impl Compiler {
         if elements.len() > 255 {
             return Err(CompileError::TooManyLocals); // Reuse this error
         }
-        
+
         self.emit_bytes(OpCode::OP_VECTOR, elements.len() as u8, 1);
         Ok(())
     }
 
     /// Compile a call-with-values expression
-    fn compile_call_with_values(&mut self, call_with_values: &CallWithValuesExpr) -> Result<(), CompileError> {
+    fn compile_call_with_values(
+        &mut self,
+        call_with_values: &CallWithValuesExpr,
+    ) -> Result<(), CompileError> {
         self.trace("Compiling call-with-values expression");
-        
+
         // For now, implement a simplified version
         // call-with-values calls producer, then calls consumer with the results
-        
+
         // Compile and call the producer
         self.compile_expr(&call_with_values.producer)?;
         self.emit_bytes(OpCode::OP_CALL, 0, 1); // Call with 0 arguments
-        
+
         // Compile the consumer
         self.compile_expr(&call_with_values.consumer)?;
-        
+
         // Call consumer with 1 argument (the result from producer)
         self.emit_bytes(OpCode::OP_CALL, 1, 1);
-        
+
         Ok(())
     }
 
     /// Compile an import expression
     fn compile_import(&mut self, _import: &ImportExpr) -> Result<(), CompileError> {
         self.trace("Compiling import expression");
-        
+
         // For now, imports are not implemented in the runtime
         // Just return nil
         self.emit_byte(OpCode::OP_NIL, 1);
@@ -1435,7 +1519,7 @@ impl Compiler {
             Expr::Character(c) => Ok(Value::character(*c)),
             Expr::Boolean(b) => Ok(Value::Boolean(*b)),
             Expr::Variable(name) => Ok(Value::symbol(name.clone())), // Symbols
-            
+
             Expr::List(elements) => {
                 if elements.is_empty() {
                     Ok(Value::Nil)
@@ -1445,12 +1529,12 @@ impl Compiler {
                     Ok(Value::Nil) // Simplified
                 }
             }
-            
+
             Expr::Vector(_elements) => {
                 // Convert elements to values (simplified)
                 Ok(Value::vector(vec![])) // Simplified for now
             }
-            
+
             _ => {
                 // For complex expressions, we can't easily convert to values
                 // Return nil for now
