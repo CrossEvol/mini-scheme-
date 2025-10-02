@@ -1345,6 +1345,10 @@ impl VM {
             "newline" => self.builtin_newline(arg_count),
             "error" => self.builtin_error(arg_count),
             "for-each" => self.builtin_for_each(arg_count),
+            "string->number" => self.builtin_string_to_number(arg_count),
+            "list->vector" => self.builtin_list_to_vector(arg_count),
+            "vector->list" => self.builtin_vector_to_list(arg_count),
+            "list->string" => self.builtin_list_to_string(arg_count),
             _ => Err(RuntimeError::InvalidOperation(format!(
                 "Unknown built-in function: {}",
                 name
@@ -1617,6 +1621,226 @@ impl VM {
 
         // for-each returns unspecified value (push nil)
         self.push(Value::Nil)?;
+        Ok(())
+    }
+
+    /// Implement the string->number built-in function
+    fn builtin_string_to_number(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let value = self.pop()?;
+        
+        // Check if the argument is a string
+        match &value {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    if let Object::String(s) = &*obj_ref {
+                        // Try to parse the string as a number
+                        match s.trim().parse::<f64>() {
+                            Ok(num) => {
+                                self.push(Value::Number(num))?;
+                            }
+                            Err(_) => {
+                                // Return #f for invalid numeric strings
+                                self.push(Value::Boolean(false))?;
+                            }
+                        }
+                    } else {
+                        return Err(RuntimeError::TypeError {
+                            expected: "string".to_string(),
+                            got: self.type_name(&value),
+                        });
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow string object".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "string".to_string(),
+                    got: self.type_name(&value),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Implement the list->vector built-in function
+    fn builtin_list_to_vector(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let list = self.pop()?;
+        
+        // Convert list to vector by collecting all elements
+        let mut elements = Vec::new();
+        let mut current = list;
+        
+        loop {
+            let next_current = match &current {
+                Value::Nil => break, // End of list
+                Value::Object(obj) => {
+                    if let Ok(obj_ref) = obj.try_borrow() {
+                        if let Object::Cons(cons) = &*obj_ref {
+                            elements.push(cons.car.clone());
+                            cons.cdr.clone()
+                        } else {
+                            return Err(RuntimeError::TypeError {
+                                expected: "list".to_string(),
+                                got: self.type_name(&current),
+                            });
+                        }
+                    } else {
+                        return Err(RuntimeError::InvalidOperation(
+                            "Cannot borrow list object".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(RuntimeError::TypeError {
+                        expected: "list".to_string(),
+                        got: self.type_name(&current),
+                    });
+                }
+            };
+            current = next_current;
+        }
+        
+        // Create and push the vector
+        let vector_value = Value::vector(elements);
+        self.push(vector_value)?;
+        Ok(())
+    }
+
+    /// Implement the vector->list built-in function
+    fn builtin_vector_to_list(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let value = self.pop()?;
+        
+        // Check if the argument is a vector
+        match &value {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    if let Object::Vector(vec) = &*obj_ref {
+                        // Convert vector to list by building cons cells from right to left
+                        let mut result = Value::Nil;
+                        for element in vec.iter().rev() {
+                            result = Value::cons(element.clone(), result);
+                        }
+                        self.push(result)?;
+                    } else {
+                        return Err(RuntimeError::TypeError {
+                            expected: "vector".to_string(),
+                            got: self.type_name(&value),
+                        });
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow vector object".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "vector".to_string(),
+                    got: self.type_name(&value),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Implement the list->string built-in function
+    fn builtin_list_to_string(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let list = self.pop()?;
+        
+        // Convert list of characters to string
+        let mut chars = Vec::new();
+        let mut current = list;
+        
+        loop {
+            let next_current = match &current {
+                Value::Nil => break, // End of list
+                Value::Object(obj) => {
+                    if let Ok(obj_ref) = obj.try_borrow() {
+                        if let Object::Cons(cons) = &*obj_ref {
+                            // Check if car is a character
+                            match &cons.car {
+                                Value::Object(char_obj) => {
+                                    if let Ok(char_ref) = char_obj.try_borrow() {
+                                        if let Object::Character(c) = &*char_ref {
+                                            chars.push(*c);
+                                        } else {
+                                            return Err(RuntimeError::TypeError {
+                                                expected: "character".to_string(),
+                                                got: self.type_name(&cons.car),
+                                            });
+                                        }
+                                    } else {
+                                        return Err(RuntimeError::InvalidOperation(
+                                            "Cannot borrow character object".to_string(),
+                                        ));
+                                    }
+                                }
+                                _ => {
+                                    return Err(RuntimeError::TypeError {
+                                        expected: "character".to_string(),
+                                        got: self.type_name(&cons.car),
+                                    });
+                                }
+                            }
+                            cons.cdr.clone()
+                        } else {
+                            return Err(RuntimeError::TypeError {
+                                expected: "list".to_string(),
+                                got: self.type_name(&current),
+                            });
+                        }
+                    } else {
+                        return Err(RuntimeError::InvalidOperation(
+                            "Cannot borrow list object".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(RuntimeError::TypeError {
+                        expected: "list".to_string(),
+                        got: self.type_name(&current),
+                    });
+                }
+            };
+            current = next_current;
+        }
+        
+        // Create string from characters and push it
+        let string_value = Value::string(chars.into_iter().collect());
+        self.push(string_value)?;
         Ok(())
     }
 
