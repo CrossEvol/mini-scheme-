@@ -338,11 +338,14 @@ fn process_input_with_config_result(
                 err
             })
             .map(|result| {
-                // Only show "Result:" prefix when debugging modes are enabled
-                if show_tokens || show_ast || show_bytecode {
-                    println!("Result: {}", result);
-                } else {
-                    println!("{}", result);
+                // Don't print nil values (used for statements that produce no output)
+                if !result.is_nil() {
+                    // Only show "Result:" prefix when debugging modes are enabled
+                    if show_tokens || show_ast || show_bytecode {
+                        println!("Result: {}", result);
+                    } else {
+                        println!("{}", result);
+                    }
                 }
             })?;
     }
@@ -354,11 +357,161 @@ fn process_input_with_config_result(
     Ok(())
 }
 
+fn process_input_with_repl_vm(
+    input: &str,
+    vm: &mut VM,
+    trace_config: TraceConfig,
+    show_tokens: bool,
+    show_ast: bool,
+    show_bytecode: bool,
+    execute: bool,
+) {
+    if let Err(error) = process_input_with_repl_vm_result(
+        input,
+        vm,
+        trace_config,
+        show_tokens,
+        show_ast,
+        show_bytecode,
+        execute,
+    ) {
+        let error_reporter = ErrorReporter::new();
+        error_reporter.report_error(&error, None);
+    }
+}
+
+fn process_input_with_repl_vm_result(
+    input: &str,
+    vm: &mut VM,
+    trace_config: TraceConfig,
+    show_tokens: bool,
+    show_ast: bool,
+    show_bytecode: bool,
+    execute: bool,
+) -> Result<(), MiniSchemeError> {
+    let input_lines: Vec<&str> = input.lines().collect();
+    let error_reporter = ErrorReporter::new();
+
+    // Create lexer and tokenize
+    let mut lexer = Lexer::new(input);
+    let tokens = lexer.tokenize().map_err(|err| {
+        let context = ErrorContext::new(None, err.line(), err.column())
+            .with_source_line(
+                input_lines
+                    .get(err.line().saturating_sub(1))
+                    .unwrap_or(&"")
+                    .to_string(),
+            )
+            .with_context("tokenizing source code".to_string());
+        error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
+        err
+    })?;
+
+    if show_tokens {
+        println!("=== TOKENS ===");
+        for token in &tokens {
+            println!("  {:?}", token);
+        }
+        println!();
+    }
+
+    // Create parser and parse
+    let mut parser = Parser::new(tokens);
+    let ast = parser.parse().map_err(|err| {
+        let (line, column) = if let (Some(l), Some(c)) = (err.line(), err.column()) {
+            (l, c)
+        } else {
+            (input_lines.len(), 1)
+        };
+
+        let context = ErrorContext::new(None, line, column)
+            .with_source_line(
+                input_lines
+                    .get(line.saturating_sub(1))
+                    .unwrap_or(&"")
+                    .to_string(),
+            )
+            .with_context("parsing source code".to_string());
+        error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
+        err
+    })?;
+
+    if show_ast {
+        println!("=== AST ===");
+        for expr in &ast {
+            println!("  {:?}", expr);
+        }
+        println!();
+    }
+
+    // Compile to bytecode using the new compilation pipeline
+    let function = if trace_config.compilation {
+        let tracer = Tracer::new(trace_config.clone());
+        Compiler::compile_ast_with_trace(&ast, tracer).map_err(|err| {
+            let context = ErrorContext::new(None, 1, 1)
+                .with_context("compiling AST to bytecode".to_string());
+            error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
+            err
+        })?
+    } else {
+        Compiler::compile_ast(&ast).map_err(|err| {
+            let context = ErrorContext::new(None, 1, 1)
+                .with_context("compiling AST to bytecode".to_string());
+            error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
+            err
+        })?
+    };
+
+    if show_bytecode {
+        println!("=== BYTECODE ===");
+        let disassembler = bytecode::Disassembler::new();
+        disassembler.disassemble_chunk(&function.chunk, "script");
+        println!();
+    }
+
+    // Execute if requested
+    if execute {
+        if show_tokens || show_ast || show_bytecode {
+            println!("=== EXECUTION ===");
+        }
+
+        // Set up tracing if requested
+        if trace_config.execution {
+            let tracer = Tracer::new(trace_config);
+            vm.set_tracer(tracer);
+        }
+
+        vm.interpret(&function.chunk)
+            .map_err(|err| {
+                let context = ErrorContext::new(None, 1, 1)
+                    .with_context("executing bytecode".to_string());
+                error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
+                err
+            })
+            .map(|result| {
+                // Don't print nil values (used for statements that produce no output)
+                if !result.is_nil() {
+                    // Only show "Result:" prefix when debugging modes are enabled
+                    if show_tokens || show_ast || show_bytecode {
+                        println!("Result: {}", result);
+                    } else {
+                        println!("{}", result);
+                    }
+                }
+            })?;
+    }
+
+    Ok(())
+}
+
 fn repl_with_config(mut trace_config: TraceConfig) {
     let mut show_tokens = false;
     let mut show_ast = false;
     let mut show_bytecode = false;
     let mut execute = true;
+    
+    // Create a single VM instance for the entire REPL session
+    let mut vm = VM::new();
 
     loop {
         print!("mini-scheme> ");
@@ -480,14 +633,23 @@ fn repl_with_config(mut trace_config: TraceConfig) {
                         continue;
                     }
                     _ => {
-                        process_input_with_config(
+                        // Reset the output flag before processing
+                        vm.reset_output_flag();
+                        
+                        process_input_with_repl_vm(
                             input,
+                            &mut vm,
                             trace_config.clone(),
                             show_tokens,
                             show_ast,
                             show_bytecode,
                             execute,
                         );
+                        
+                        // Add a newline if output was produced without one
+                        if execute && !show_tokens && !show_ast && !show_bytecode && vm.output_was_produced() {
+                            println!();
+                        }
                     }
                 }
             }
