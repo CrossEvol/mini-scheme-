@@ -257,6 +257,12 @@ impl Lexer {
             "list->string" => Token::ListToString,
             "list->vector" => Token::ListToVector,
             "vector->list" => Token::VectorToList,
+            
+            // Vector Operations
+            "vector?" => Token::VectorQ,
+            "vector-length" => Token::VectorLength,
+            "vector-ref" => Token::VectorRef,
+            "vector-set!" => Token::VectorSet,
 
             // Arithmetic Operations
             "+" => Token::Plus,

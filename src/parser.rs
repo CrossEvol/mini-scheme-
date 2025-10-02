@@ -176,6 +176,12 @@ impl Parser {
             Token::ListToString => Ok(Expr::Variable("list->string".to_string())),
             Token::ListToVector => Ok(Expr::Variable("list->vector".to_string())),
             Token::VectorToList => Ok(Expr::Variable("vector->list".to_string())),
+            
+            // Vector operations
+            Token::VectorQ => Ok(Expr::Variable("vector?".to_string())),
+            Token::VectorLength => Ok(Expr::Variable("vector-length".to_string())),
+            Token::VectorRef => Ok(Expr::Variable("vector-ref".to_string())),
+            Token::VectorSet => Ok(Expr::Variable("vector-set!".to_string())),
 
             // Hashtable operations
             Token::MakeHashtable => Ok(Expr::Variable("make-hashtable".to_string())),

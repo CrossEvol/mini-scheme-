@@ -1186,6 +1186,73 @@ impl Compiler {
                     self.emit_bytes(OpCode::OP_CALL, 1, 1);
                     return Ok(());
                 }
+                "vector?" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("vector?".to_string(), 1);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the argument
+                    self.compile_expr(&args[0])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 1, 1);
+                    return Ok(());
+                }
+                "vector-length" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 1,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("vector-length".to_string(), 1);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the argument
+                    self.compile_expr(&args[0])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 1, 1);
+                    return Ok(());
+                }
+                "vector-ref" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 2,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("vector-ref".to_string(), 2);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the arguments
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 2, 1);
+                    return Ok(());
+                }
+                "vector-set!" => {
+                    if args.len() != 3 {
+                        return Err(CompileError::ArityMismatch {
+                            expected: 3,
+                            got: args.len(),
+                        });
+                    }
+                    // Push the built-in function onto the stack
+                    let builtin_value = crate::object::Value::builtin("vector-set!".to_string(), 3);
+                    self.emit_constant(builtin_value)?;
+                    // Compile the arguments
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                    self.compile_expr(&args[2])?;
+                    // Call the built-in function
+                    self.emit_bytes(OpCode::OP_CALL, 3, 1);
+                    return Ok(());
+                }
                 _ => {
                     // Fall through to regular function call
                 }

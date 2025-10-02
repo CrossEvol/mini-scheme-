@@ -1349,6 +1349,10 @@ impl VM {
             "list->vector" => self.builtin_list_to_vector(arg_count),
             "vector->list" => self.builtin_vector_to_list(arg_count),
             "list->string" => self.builtin_list_to_string(arg_count),
+            "vector?" => self.builtin_vector_q(arg_count),
+            "vector-length" => self.builtin_vector_length(arg_count),
+            "vector-ref" => self.builtin_vector_ref(arg_count),
+            "vector-set!" => self.builtin_vector_set(arg_count),
             _ => Err(RuntimeError::InvalidOperation(format!(
                 "Unknown built-in function: {}",
                 name
@@ -1356,14 +1360,17 @@ impl VM {
         }?;
 
         // After the built-in function call, the stack should be:
-        // [..., function, arg1, arg2, ..., argN, result]
-        // We need to remove the function and arguments, keeping only the result
+        // [..., function, result]
+        // We need to remove the function, keeping only the result
 
         // Get the result (top of stack)
         let result = self.stack[self.stack_top - 1].clone();
 
-        // Remove function and arguments from the stack
-        self.stack_top -= arg_count + 1;
+        // Remove the result temporarily
+        self.pop()?;
+
+        // Remove the function from the stack
+        self.pop()?;
 
         // Push the result back
         self.push(result)?;
@@ -1762,6 +1769,199 @@ impl VM {
                 return Err(RuntimeError::TypeError {
                     expected: "vector".to_string(),
                     got: self.type_name(&value),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Implement the vector? built-in function
+    fn builtin_vector_q(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let value = self.pop()?;
+        let result = Value::Boolean(value.is_vector());
+        self.push(result)?;
+        Ok(())
+    }
+
+    /// Implement the vector-length built-in function
+    fn builtin_vector_length(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        let value = self.pop()?;
+        
+        match &value {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    if let Object::Vector(vec) = &*obj_ref {
+                        let length = vec.len() as f64;
+                        self.push(Value::Number(length))?;
+                    } else {
+                        return Err(RuntimeError::TypeError {
+                            expected: "vector".to_string(),
+                            got: self.type_name(&value),
+                        });
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow vector object".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "vector".to_string(),
+                    got: self.type_name(&value),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Implement the vector-ref built-in function
+    fn builtin_vector_ref(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 2 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 2,
+                got: arg_count,
+            });
+        }
+
+        // Arguments are in reverse order on stack: index, vector
+        let index = self.pop()?;
+        let vector = self.pop()?;
+        
+        // Check if index is a number
+        let idx = match index.as_number() {
+            Some(n) => {
+                if n < 0.0 || n.fract() != 0.0 {
+                    return Err(RuntimeError::TypeError {
+                        expected: "non-negative integer".to_string(),
+                        got: format!("{}", n),
+                    });
+                }
+                n as usize
+            }
+            None => {
+                return Err(RuntimeError::TypeError {
+                    expected: "number".to_string(),
+                    got: self.type_name(&index),
+                });
+            }
+        };
+
+        // Check if vector is actually a vector and get the element
+        match &vector {
+            Value::Object(obj) => {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    if let Object::Vector(vec) = &*obj_ref {
+                        if idx >= vec.len() {
+                            return Err(RuntimeError::InvalidOperation(format!(
+                                "Vector index {} out of bounds (length {})",
+                                idx, vec.len()
+                            )));
+                        }
+                        let element = vec[idx].clone();
+                        self.push(element)?;
+                    } else {
+                        return Err(RuntimeError::TypeError {
+                            expected: "vector".to_string(),
+                            got: self.type_name(&vector),
+                        });
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow vector object".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "vector".to_string(),
+                    got: self.type_name(&vector),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Implement the vector-set! built-in function
+    fn builtin_vector_set(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 3 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 3,
+                got: arg_count,
+            });
+        }
+
+        // Arguments are in reverse order on stack: value, index, vector
+        let value = self.pop()?;
+        let index = self.pop()?;
+        let vector = self.pop()?;
+        
+        // Check if index is a number
+        let idx = match index.as_number() {
+            Some(n) => {
+                if n < 0.0 || n.fract() != 0.0 {
+                    return Err(RuntimeError::TypeError {
+                        expected: "non-negative integer".to_string(),
+                        got: format!("{}", n),
+                    });
+                }
+                n as usize
+            }
+            None => {
+                return Err(RuntimeError::TypeError {
+                    expected: "number".to_string(),
+                    got: self.type_name(&index),
+                });
+            }
+        };
+
+        // Check if vector is actually a vector and set the element
+        match &vector {
+            Value::Object(obj) => {
+                if let Ok(mut obj_ref) = obj.try_borrow_mut() {
+                    if let Object::Vector(vec) = &mut *obj_ref {
+                        if idx >= vec.len() {
+                            return Err(RuntimeError::InvalidOperation(format!(
+                                "Vector index {} out of bounds (length {})",
+                                idx, vec.len()
+                            )));
+                        }
+                        vec[idx] = value;
+                        // vector-set! returns unspecified value (we'll use nil)
+                        self.push(Value::Nil)?;
+                    } else {
+                        return Err(RuntimeError::TypeError {
+                            expected: "vector".to_string(),
+                            got: self.type_name(&vector),
+                        });
+                    }
+                } else {
+                    return Err(RuntimeError::InvalidOperation(
+                        "Cannot borrow vector object mutably".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(RuntimeError::TypeError {
+                    expected: "vector".to_string(),
+                    got: self.type_name(&vector),
                 });
             }
         }

@@ -76,6 +76,12 @@ pub enum Token {
     ListToVector,   // list->vector
     VectorToList,   // vector->list
     
+    // Vector Operations
+    VectorQ,        // vector?
+    VectorLength,   // vector-length
+    VectorRef,      // vector-ref
+    VectorSet,      // vector-set!
+    
     // Arithmetic Operations
     Plus,           // +
     Minus,          // -
@@ -274,6 +280,12 @@ impl fmt::Display for Token {
             Token::ListToString => write!(f, "list->string"),
             Token::ListToVector => write!(f, "list->vector"),
             Token::VectorToList => write!(f, "vector->list"),
+            
+            // Vector Operations
+            Token::VectorQ => write!(f, "vector?"),
+            Token::VectorLength => write!(f, "vector-length"),
+            Token::VectorRef => write!(f, "vector-ref"),
+            Token::VectorSet => write!(f, "vector-set!"),
             
             // Arithmetic Operations
             Token::Plus => write!(f, "+"),
