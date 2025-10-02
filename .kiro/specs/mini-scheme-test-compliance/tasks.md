@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Fix lambda display formatting and basic compilation
+- [x] 1. Fix lambda display formatting and basic compilation
   - Modify the VM's value display to show procedures as "#<procedure>" instead of "#<closure:lambda@0>"
   - Ensure lambda expressions compile correctly and create proper closures
   - _Requirements: 1.7_

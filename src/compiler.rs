@@ -741,21 +741,18 @@ impl Compiler {
             tracer: self.tracer.as_ref().map(|t| Tracer::new(t.config.clone())),
         };
 
-        // Reserve slot 0 for the function itself
-        temp_compiler.locals.push(Local {
-            name: "".to_string(),
-            depth: 0,
-            is_captured: false,
-        });
-
-        // Begin function scope
-        temp_compiler.begin_scope();
-
-        // Declare parameters as local variables
+        // Declare parameters as local variables (starting at slot 0)
+        // Parameters are at the function's base scope level
         for param in &lambda.params {
-            temp_compiler.declare_local(param.clone())?;
-            temp_compiler.define_local();
+            temp_compiler.locals.push(Local {
+                name: param.clone(),
+                depth: 0, // Function parameters are at depth 0
+                is_captured: false,
+            });
         }
+
+        // Begin function body scope
+        temp_compiler.begin_scope();
 
         // Compile function body
         for (i, expr) in lambda.body.iter().enumerate() {
@@ -767,10 +764,15 @@ impl Compiler {
             }
         }
 
+        // If the body is empty, push nil as the return value
+        if lambda.body.is_empty() {
+            temp_compiler.emit_byte(OpCode::OP_NIL, 1);
+        }
+
         // End function scope
         temp_compiler.end_scope();
 
-        // Finish compiling the function
+        // Finish compiling the function (this will emit OP_RETURN)
         let compiled_function = temp_compiler.end_compiler();
 
         // Create closure instruction in the current compiler

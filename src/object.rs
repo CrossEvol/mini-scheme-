@@ -434,8 +434,8 @@ impl fmt::Display for Value {
                         write!(f, ")")
                     }
                     Object::Hashtable(_) => write!(f, "#<hashtable>"),
-                    Object::Function(func) => write!(f, "#<function:{}>", func.name),
-                    Object::Closure(closure) => write!(f, "#<closure:{}>", closure.function.name),
+                    Object::Function(_func) => write!(f, "#<procedure>"),
+                    Object::Closure(_closure) => write!(f, "#<procedure>"),
                     Object::Upvalue(_) => write!(f, "#<upvalue>"),
                 }
             }
