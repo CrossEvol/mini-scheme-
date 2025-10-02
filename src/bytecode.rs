@@ -525,6 +525,14 @@ impl Disassembler {
             Value::Number(n) => print!("{}", n),
             Value::Boolean(b) => print!("{}", if *b { "#t" } else { "#f" }),
             Value::Nil => print!("nil"),
+            Value::MultipleValues(values) => {
+                print!("(values");
+                for val in values {
+                    print!(" ");
+                    self.print_value(val);
+                }
+                print!(")");
+            }
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -594,6 +602,15 @@ impl Disassembler {
             Value::Number(n) => n.to_string(),
             Value::Boolean(b) => if *b { "#t".to_string() } else { "#f".to_string() },
             Value::Nil => "nil".to_string(),
+            Value::MultipleValues(values) => {
+                let mut result = String::from("(values");
+                for val in values {
+                    result.push(' ');
+                    result.push_str(&self.value_to_string(val));
+                }
+                result.push(')');
+                result
+            }
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
