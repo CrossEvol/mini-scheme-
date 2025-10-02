@@ -1574,16 +1574,13 @@ impl Compiler {
         // Begin a new scope for the let bindings
         self.begin_scope();
 
-        // Compile all binding values first (in parallel)
-        // This ensures that bindings can't refer to each other
-        for (_var_name, init_expr) in &let_expr.bindings {
+        // Compile and bind each variable one by one
+        for (var_name, init_expr) in &let_expr.bindings {
+            // Compile the initialization expression
             self.compile_expr(init_expr)?;
-        }
-
-        // Now declare and define all variables
-        // Stack layout: [value0, value1, value2, ...]
-        // Declare variables in forward order to match stack positions
-        for (var_name, _init_expr) in &let_expr.bindings {
+            
+            // Declare and define the variable
+            // The value is already on the stack and becomes the variable's value
             self.declare_local(var_name.clone())?;
             self.define_local();
         }
@@ -1598,8 +1595,24 @@ impl Compiler {
             }
         }
 
-        // End the let scope
-        self.end_scope();
+        // Manually pop the local variables without using end_scope
+        // We need to pop them in reverse order (most recent first)
+        let binding_count = let_expr.bindings.len();
+        for _ in 0..binding_count {
+            // Remove the local from the compiler's locals array
+            if let Some(local) = self.locals.pop() {
+                if local.depth > self.scope_depth as isize {
+                    // This local is going out of scope
+                    if local.is_captured {
+                        self.emit_byte(OpCode::OP_CLOSE_UPVALUE, 1);
+                    }
+                    // Don't emit OP_POP here - the values are part of the stack layout
+                }
+            }
+        }
+
+        // End the scope (this will handle any remaining cleanup)
+        self.scope_depth -= 1;
 
         Ok(())
     }

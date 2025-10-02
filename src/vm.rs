@@ -2736,7 +2736,12 @@ mod tests {
         let vm = VM::new();
         assert_eq!(vm.stack_depth(), 0);
         assert_eq!(vm.frame_count, 0);
-        assert!(vm.globals.is_empty());
+        // VM now has builtin functions in globals
+        assert!(!vm.globals.is_empty());
+        assert!(vm.globals.contains_key("string-hash"));
+        assert!(vm.globals.contains_key("equal-hash"));
+        assert!(vm.globals.contains_key("string=?"));
+        assert!(vm.globals.contains_key("equal?"));
         assert!(!vm.trace_execution);
     }
 
@@ -2751,7 +2756,10 @@ mod tests {
 
         assert_eq!(vm.stack_depth(), 0);
         assert_eq!(vm.frame_count, 0);
-        assert!(vm.globals.is_empty());
+        // After reset, VM should have builtin functions but not user-defined globals
+        assert!(!vm.globals.is_empty());
+        assert!(vm.globals.contains_key("string-hash"));
+        assert!(!vm.globals.contains_key("test")); // User-defined global should be gone
         // Note: trace_execution is not reset by reset()
     }
 
