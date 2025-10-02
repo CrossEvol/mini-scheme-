@@ -1,7 +1,7 @@
 use crate::ast::{DefineExpr, Expr, LambdaExpr};
 use crate::bytecode::{Chunk, OpCode};
 use crate::object::{Function, Value};
-use crate::trace::{Tracer, TraceConfig, CompilationTrace, CompilationPhase, format_ast_expr};
+use crate::trace::{CompilationPhase, CompilationTrace, TraceConfig, Tracer, format_ast_expr};
 
 /// Type of function being compiled
 #[derive(Debug, Clone, PartialEq)]
@@ -272,7 +272,10 @@ impl Compiler {
     /// Compile a variable reference
     fn compile_variable(&mut self, name: &str) -> Result<(), CompileError> {
         self.trace(&format!("Compiling variable reference: {}", name));
-        self.trace_compilation_phase(CompilationPhase::VariableResolution, &Expr::Variable(name.to_string()));
+        self.trace_compilation_phase(
+            CompilationPhase::VariableResolution,
+            &Expr::Variable(name.to_string()),
+        );
 
         // Try to resolve as local variable first
         if let Some(local_index) = self.resolve_local(name) {
@@ -376,11 +379,11 @@ impl Compiler {
                 self.function.name.clone(),
                 self.scope_depth,
             );
-            
+
             for (i, _) in self.upvalues.iter().enumerate() {
                 trace.add_upvalue(format!("existing_upvalue_{}", i));
             }
-            
+
             tracer.trace_compilation(trace);
         }
 
@@ -415,10 +418,13 @@ impl Compiler {
 
                 // Add new upvalue that captures this local
                 let upvalue_index = self.add_upvalue(local_index as u8, true);
-                
+
                 // Trace successful upvalue capture
-                self.trace(&format!("Captured local '{}' as upvalue {}", name, upvalue_index));
-                
+                self.trace(&format!(
+                    "Captured local '{}' as upvalue {}",
+                    name, upvalue_index
+                ));
+
                 return Some(upvalue_index);
             }
 
@@ -426,10 +432,13 @@ impl Compiler {
             if let Some(upvalue_index) = enclosing.resolve_upvalue(name) {
                 // Add new upvalue that captures this upvalue
                 let new_upvalue_index = self.add_upvalue(upvalue_index as u8, false);
-                
+
                 // Trace successful upvalue capture
-                self.trace(&format!("Captured upvalue '{}' as upvalue {}", name, new_upvalue_index));
-                
+                self.trace(&format!(
+                    "Captured upvalue '{}' as upvalue {}",
+                    name, new_upvalue_index
+                ));
+
                 return Some(new_upvalue_index);
             }
         }
@@ -506,7 +515,7 @@ impl Compiler {
     pub fn begin_scope(&mut self) {
         self.scope_depth += 1;
         self.trace(&format!("Beginning scope, depth now: {}", self.scope_depth));
-        
+
         // Trace scope management
         if let Some(tracer) = &mut self.tracer {
             let mut trace = CompilationTrace::new(
@@ -515,14 +524,14 @@ impl Compiler {
                 self.function.name.clone(),
                 self.scope_depth,
             );
-            
+
             // Add current locals
             for local in &self.locals {
                 if local.depth >= 0 {
                     trace.add_local(local.name.clone());
                 }
             }
-            
+
             tracer.trace_compilation(trace);
         }
     }
@@ -541,14 +550,14 @@ impl Compiler {
                 self.function.name.clone(),
                 self.scope_depth,
             );
-            
+
             // Add locals that will be removed
             for local in &self.locals {
                 if local.depth > self.scope_depth as isize {
                     trace.add_local(format!("removing: {}", local.name));
                 }
             }
-            
+
             tracer.trace_compilation(trace);
         }
 
@@ -670,8 +679,11 @@ impl Compiler {
             "Compiling lambda with {} parameters",
             lambda.params.len()
         ));
-        
-        self.trace_compilation_phase(CompilationPhase::FunctionCompilation, &Expr::Lambda(Box::new(lambda.clone())));
+
+        self.trace_compilation_phase(
+            CompilationPhase::FunctionCompilation,
+            &Expr::Lambda(Box::new(lambda.clone())),
+        );
 
         // We need to compile the lambda in a separate function context
         // For now, let's create a simple implementation that doesn't handle upvalues
@@ -741,6 +753,72 @@ impl Compiler {
             args.len()
         ));
 
+        // Check for built-in functions
+        if let Expr::Variable(func_name) = func_expr {
+            match func_name.as_str() {
+                "cons" => {
+                    if args.len() != 2 {
+                        return Err(CompileError::UndefinedVariable(format!(
+                            "cons expects 2 arguments, got {}",
+                            args.len()
+                        )));
+                    }
+                    // Compile arguments: car first, then cdr
+                    self.compile_expr(&args[0])?; // car
+                    self.compile_expr(&args[1])?; // cdr
+                    self.emit_byte(OpCode::OP_CONS, 1);
+                    return Ok(());
+                }
+                "car" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::UndefinedVariable(format!(
+                            "car expects 1 argument, got {}",
+                            args.len()
+                        )));
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_CAR, 1);
+                    return Ok(());
+                }
+                "cdr" => {
+                    if args.len() != 1 {
+                        return Err(CompileError::UndefinedVariable(format!(
+                            "cdr expects 1 argument, got {}",
+                            args.len()
+                        )));
+                    }
+                    self.compile_expr(&args[0])?;
+                    self.emit_byte(OpCode::OP_CDR, 1);
+                    return Ok(());
+                }
+                "vector" => {
+                    if args.len() > 255 {
+                        return Err(CompileError::TooManyLocals); // Reuse this error for too many args
+                    }
+                    // Compile all arguments
+                    for arg in args {
+                        self.compile_expr(arg)?;
+                    }
+                    self.emit_bytes(OpCode::OP_VECTOR, args.len() as u8, 1);
+                    return Ok(());
+                }
+                "make-hashtable" => {
+                    if args.len() != 0 {
+                        return Err(CompileError::UndefinedVariable(format!(
+                            "make-hashtable expects 0 arguments, got {}",
+                            args.len()
+                        )));
+                    }
+                    self.emit_byte(OpCode::OP_MAKE_HASHTABLE, 1);
+                    return Ok(());
+                }
+                _ => {
+                    // Fall through to regular function call
+                }
+            }
+        }
+
+        // Regular function call
         // Compile the function expression
         self.compile_expr(func_expr)?;
 

@@ -222,25 +222,25 @@
   - Test trace configuration and control mechanisms
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
 
-- [ ] 8. Implement Scheme data structure operations
+- [x] 8. Implement Scheme data structure operations
   - Add Cons cell operations (cons, car, cdr)
   - Implement vector creation and access
   - Add hashtable support with basic operations
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
 
-- [ ] 8.1 Implement Cons cell operations
+- [x] 8.1 Implement Cons cell operations
   - Add OP_CONS instruction to create cons cells
   - Implement OP_CAR and OP_CDR for list access
   - Add proper nil handling for empty lists
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 8.2 Add vector operations
+- [x] 8.2 Add vector operations
   - Implement OP_VECTOR instruction for vector creation
   - Add vector indexing and access operations
   - Implement vector length and manipulation functions
   - _Requirements: 5.4, 5.5_
 
-- [ ] 8.3 Create hashtable support
+- [x] 8.3 Create hashtable support
   - Implement OP_MAKE_HASHTABLE instruction
   - Add hashtable key-value operations
   - Implement hashtable lookup and modification
