@@ -6,59 +6,59 @@ use crate::object::Value;
 #[allow(non_camel_case_types)]
 pub enum OpCode {
     // Constants and literals
-    OP_CONSTANT = 0,     // Load constant from constant pool
-    OP_NIL = 1,          // Push nil value
-    OP_TRUE = 2,         // Push true value
-    OP_FALSE = 3,        // Push false value
-    
+    OP_CONSTANT = 0, // Load constant from constant pool
+    OP_NIL = 1,      // Push nil value
+    OP_TRUE = 2,     // Push true value
+    OP_FALSE = 3,    // Push false value
+
     // Stack operations
-    OP_POP = 4,          // Pop top value from stack
-    
+    OP_POP = 4, // Pop top value from stack
+
     // Variable operations
-    OP_GET_LOCAL = 5,    // Get local variable by slot index
-    OP_SET_LOCAL = 6,    // Set local variable by slot index
-    OP_GET_GLOBAL = 7,   // Get global variable by name
-    OP_DEFINE_GLOBAL = 8,// Define global variable
-    OP_SET_GLOBAL = 9,   // Set global variable by name
-    OP_GET_UPVALUE = 10, // Get upvalue by index
-    OP_SET_UPVALUE = 11, // Set upvalue by index
-    
+    OP_GET_LOCAL = 5,     // Get local variable by slot index
+    OP_SET_LOCAL = 6,     // Set local variable by slot index
+    OP_GET_GLOBAL = 7,    // Get global variable by name
+    OP_DEFINE_GLOBAL = 8, // Define global variable
+    OP_SET_GLOBAL = 9,    // Set global variable by name
+    OP_GET_UPVALUE = 10,  // Get upvalue by index
+    OP_SET_UPVALUE = 11,  // Set upvalue by index
+
     // Comparison operations
-    OP_EQUAL = 12,       // Equality comparison
-    OP_GREATER = 13,     // Greater than comparison
-    OP_LESS = 14,        // Less than comparison
-    
+    OP_EQUAL = 12,   // Equality comparison
+    OP_GREATER = 13, // Greater than comparison
+    OP_LESS = 14,    // Less than comparison
+
     // Arithmetic operations
-    OP_ADD = 15,         // Addition
-    OP_SUBTRACT = 16,    // Subtraction
-    OP_MULTIPLY = 17,    // Multiplication
-    OP_DIVIDE = 18,      // Division
-    
+    OP_ADD = 15,      // Addition
+    OP_SUBTRACT = 16, // Subtraction
+    OP_MULTIPLY = 17, // Multiplication
+    OP_DIVIDE = 18,   // Division
+
     // Unary operations
-    OP_NOT = 19,         // Logical not
-    OP_NEGATE = 20,      // Arithmetic negation
-    
+    OP_NOT = 19,    // Logical not
+    OP_NEGATE = 20, // Arithmetic negation
+
     // I/O operations
-    OP_PRINT = 21,       // Print value to stdout
-    
+    OP_PRINT = 21, // Print value to stdout
+
     // Control flow
-    OP_JUMP = 22,        // Unconditional jump
-    OP_JUMP_IF_FALSE = 23,// Conditional jump
-    OP_LOOP = 24,        // Loop back jump
-    
+    OP_JUMP = 22,          // Unconditional jump
+    OP_JUMP_IF_FALSE = 23, // Conditional jump
+    OP_LOOP = 24,          // Loop back jump
+
     // Function operations
-    OP_CALL = 25,        // Call function/closure
-    OP_CLOSURE = 26,     // Create closure with upvalue capture
-    OP_CLOSE_UPVALUE = 27,// Close upvalues when leaving scope
-    OP_RETURN = 28,      // Return from function
-    
+    OP_CALL = 25,          // Call function/closure
+    OP_CLOSURE = 26,       // Create closure with upvalue capture
+    OP_CLOSE_UPVALUE = 27, // Close upvalues when leaving scope
+    OP_RETURN = 28,        // Return from function
+
     // Additional MiniScheme operations
-    OP_CONS = 29,        // Create cons cell from two stack values
-    OP_CAR = 30,         // Get car of cons cell
-    OP_CDR = 31,         // Get cdr of cons cell
-    OP_VECTOR = 32,      // Create vector from stack values
+    OP_CONS = 29,           // Create cons cell from two stack values
+    OP_CAR = 30,            // Get car of cons cell
+    OP_CDR = 31,            // Get cdr of cons cell
+    OP_VECTOR = 32,         // Create vector from stack values
     OP_MAKE_HASHTABLE = 33, // Create hashtable
-    
+
     // Type predicate operations
     OP_NULL_Q = 34,      // null? predicate
     OP_PAIR_Q = 35,      // pair? predicate
@@ -67,16 +67,19 @@ pub enum OpCode {
     OP_BOOLEAN_Q = 38,   // boolean? predicate
     OP_CHAR_Q = 39,      // char? predicate
     OP_HASHTABLE_Q = 40, // hashtable? predicate
-    
-    
+
     // Comparison operations
     OP_EQ_Q = 41,        // eq? predicate
     OP_STRING_EQ_Q = 42, // string=? predicate
     OP_CHAR_EQ_Q = 43,   // char=? predicate
-    
+
     // Character predicates
     OP_CHAR_NUMERIC_Q = 44,    // char-numeric? predicate
     OP_CHAR_WHITESPACE_Q = 45, // char-whitespace? predicate
+
+    // Multiple values operations
+    OP_RETURN_VALUES = 46,    // Return multiple values from current function
+    OP_CALL_WITH_VALUES = 47, // Execute call-with-values coordination
 }
 
 impl OpCode {
@@ -129,6 +132,8 @@ impl OpCode {
             43 => Some(OpCode::OP_CHAR_EQ_Q),
             44 => Some(OpCode::OP_CHAR_NUMERIC_Q),
             45 => Some(OpCode::OP_CHAR_WHITESPACE_Q),
+            46 => Some(OpCode::OP_RETURN_VALUES),
+            47 => Some(OpCode::OP_CALL_WITH_VALUES),
             _ => None,
         }
     }
@@ -142,22 +147,52 @@ impl OpCode {
     pub fn instruction_size(self) -> usize {
         match self {
             // Instructions with no operands (1 byte)
-            OpCode::OP_NIL | OpCode::OP_TRUE | OpCode::OP_FALSE |
-            OpCode::OP_POP | OpCode::OP_EQUAL | OpCode::OP_GREATER |
-            OpCode::OP_LESS | OpCode::OP_ADD | OpCode::OP_SUBTRACT |
-            OpCode::OP_MULTIPLY | OpCode::OP_DIVIDE | OpCode::OP_NOT |
-            OpCode::OP_NEGATE | OpCode::OP_PRINT | OpCode::OP_RETURN |
-            OpCode::OP_CONS | OpCode::OP_CAR | OpCode::OP_CDR |
-            OpCode::OP_MAKE_HASHTABLE | OpCode::OP_NULL_Q | OpCode::OP_PAIR_Q |
-            OpCode::OP_NUMBER_Q | OpCode::OP_STRING_Q | OpCode::OP_BOOLEAN_Q |
-            OpCode::OP_CHAR_Q | OpCode::OP_HASHTABLE_Q | OpCode::OP_EQ_Q | OpCode::OP_STRING_EQ_Q |
-            OpCode::OP_CHAR_EQ_Q | OpCode::OP_CHAR_NUMERIC_Q | OpCode::OP_CHAR_WHITESPACE_Q => 1,
+            OpCode::OP_NIL
+            | OpCode::OP_TRUE
+            | OpCode::OP_FALSE
+            | OpCode::OP_POP
+            | OpCode::OP_EQUAL
+            | OpCode::OP_GREATER
+            | OpCode::OP_LESS
+            | OpCode::OP_ADD
+            | OpCode::OP_SUBTRACT
+            | OpCode::OP_MULTIPLY
+            | OpCode::OP_DIVIDE
+            | OpCode::OP_NOT
+            | OpCode::OP_NEGATE
+            | OpCode::OP_PRINT
+            | OpCode::OP_RETURN
+            | OpCode::OP_CONS
+            | OpCode::OP_CAR
+            | OpCode::OP_CDR
+            | OpCode::OP_MAKE_HASHTABLE
+            | OpCode::OP_NULL_Q
+            | OpCode::OP_PAIR_Q
+            | OpCode::OP_NUMBER_Q
+            | OpCode::OP_STRING_Q
+            | OpCode::OP_BOOLEAN_Q
+            | OpCode::OP_CHAR_Q
+            | OpCode::OP_HASHTABLE_Q
+            | OpCode::OP_EQ_Q
+            | OpCode::OP_STRING_EQ_Q
+            | OpCode::OP_CHAR_EQ_Q
+            | OpCode::OP_CHAR_NUMERIC_Q
+            | OpCode::OP_CHAR_WHITESPACE_Q
+            | OpCode::OP_CALL_WITH_VALUES => 1,
 
             // Instructions with 1-byte operand (2 bytes total)
-            OpCode::OP_CONSTANT | OpCode::OP_GET_LOCAL | OpCode::OP_SET_LOCAL |
-            OpCode::OP_GET_GLOBAL | OpCode::OP_DEFINE_GLOBAL | OpCode::OP_SET_GLOBAL |
-            OpCode::OP_GET_UPVALUE | OpCode::OP_SET_UPVALUE | OpCode::OP_CALL |
-            OpCode::OP_CLOSE_UPVALUE | OpCode::OP_VECTOR => 2,
+            OpCode::OP_CONSTANT
+            | OpCode::OP_GET_LOCAL
+            | OpCode::OP_SET_LOCAL
+            | OpCode::OP_GET_GLOBAL
+            | OpCode::OP_DEFINE_GLOBAL
+            | OpCode::OP_SET_GLOBAL
+            | OpCode::OP_GET_UPVALUE
+            | OpCode::OP_SET_UPVALUE
+            | OpCode::OP_CALL
+            | OpCode::OP_CLOSE_UPVALUE
+            | OpCode::OP_VECTOR
+            | OpCode::OP_RETURN_VALUES => 2,
 
             // Instructions with 2-byte operand (3 bytes total)
             OpCode::OP_JUMP | OpCode::OP_JUMP_IF_FALSE | OpCode::OP_LOOP => 3,
@@ -226,6 +261,8 @@ impl OpCode {
             OpCode::OP_CHAR_EQ_Q => "OP_CHAR_EQ_Q",
             OpCode::OP_CHAR_NUMERIC_Q => "OP_CHAR_NUMERIC_Q",
             OpCode::OP_CHAR_WHITESPACE_Q => "OP_CHAR_WHITESPACE_Q",
+            OpCode::OP_RETURN_VALUES => "OP_RETURN_VALUES",
+            OpCode::OP_CALL_WITH_VALUES => "OP_CALL_WITH_VALUES",
         }
     }
 }
@@ -271,8 +308,8 @@ impl Chunk {
     /// Write an instruction with a 2-byte operand (big-endian)
     pub fn write_instruction_with_short(&mut self, opcode: OpCode, operand: u16, line: usize) {
         self.write_instruction(opcode, line);
-        self.write_byte((operand >> 8) as u8, line);  // High byte
-        self.write_byte(operand as u8, line);         // Low byte
+        self.write_byte((operand >> 8) as u8, line); // High byte
+        self.write_byte(operand as u8, line); // Low byte
     }
 
     /// Add a constant to the constant pool and return its index
@@ -320,15 +357,15 @@ impl Chunk {
     /// Patch a 2-byte jump instruction at the given offset
     pub fn patch_jump(&mut self, offset: usize) -> Result<(), String> {
         let jump_distance = self.code.len() - offset - 3; // -3 for the 3-byte jump instruction
-        
+
         if jump_distance > u16::MAX as usize {
             return Err("Jump distance too large".to_string());
         }
 
         let jump_distance = jump_distance as u16;
-        self.code[offset + 1] = (jump_distance >> 8) as u8;  // High byte
-        self.code[offset + 2] = jump_distance as u8;         // Low byte
-        
+        self.code[offset + 1] = (jump_distance >> 8) as u8; // High byte
+        self.code[offset + 2] = jump_distance as u8; // Low byte
+
         Ok(())
     }
 
@@ -336,7 +373,7 @@ impl Chunk {
     pub fn emit_loop(&mut self, loop_start: usize, line: usize) -> Result<(), String> {
         let offset = self.code.len() + 3; // +3 for the loop instruction itself
         let jump_distance = offset - loop_start;
-        
+
         if jump_distance > u16::MAX as usize {
             return Err("Loop body too large".to_string());
         }
@@ -397,35 +434,54 @@ impl Disassembler {
     fn disassemble_opcode(&self, chunk: &Chunk, opcode: OpCode, offset: usize) -> usize {
         match opcode {
             // Instructions with no operands
-            OpCode::OP_NIL | OpCode::OP_TRUE | OpCode::OP_FALSE |
-            OpCode::OP_POP | OpCode::OP_EQUAL | OpCode::OP_GREATER |
-            OpCode::OP_LESS | OpCode::OP_ADD | OpCode::OP_SUBTRACT |
-            OpCode::OP_MULTIPLY | OpCode::OP_DIVIDE | OpCode::OP_NOT |
-            OpCode::OP_NEGATE | OpCode::OP_PRINT | OpCode::OP_RETURN |
-            OpCode::OP_CONS | OpCode::OP_CAR | OpCode::OP_CDR |
-            OpCode::OP_MAKE_HASHTABLE | OpCode::OP_NULL_Q | OpCode::OP_PAIR_Q |
-            OpCode::OP_NUMBER_Q | OpCode::OP_STRING_Q | OpCode::OP_BOOLEAN_Q |
-            OpCode::OP_CHAR_Q | OpCode::OP_HASHTABLE_Q | OpCode::OP_EQ_Q | OpCode::OP_STRING_EQ_Q |
-            OpCode::OP_CHAR_EQ_Q | OpCode::OP_CHAR_NUMERIC_Q | OpCode::OP_CHAR_WHITESPACE_Q => {
-                self.simple_instruction(opcode.name(), offset)
-            }
+            OpCode::OP_NIL
+            | OpCode::OP_TRUE
+            | OpCode::OP_FALSE
+            | OpCode::OP_POP
+            | OpCode::OP_EQUAL
+            | OpCode::OP_GREATER
+            | OpCode::OP_LESS
+            | OpCode::OP_ADD
+            | OpCode::OP_SUBTRACT
+            | OpCode::OP_MULTIPLY
+            | OpCode::OP_DIVIDE
+            | OpCode::OP_NOT
+            | OpCode::OP_NEGATE
+            | OpCode::OP_PRINT
+            | OpCode::OP_RETURN
+            | OpCode::OP_CONS
+            | OpCode::OP_CAR
+            | OpCode::OP_CDR
+            | OpCode::OP_MAKE_HASHTABLE
+            | OpCode::OP_NULL_Q
+            | OpCode::OP_PAIR_Q
+            | OpCode::OP_NUMBER_Q
+            | OpCode::OP_STRING_Q
+            | OpCode::OP_BOOLEAN_Q
+            | OpCode::OP_CHAR_Q
+            | OpCode::OP_HASHTABLE_Q
+            | OpCode::OP_EQ_Q
+            | OpCode::OP_STRING_EQ_Q
+            | OpCode::OP_CHAR_EQ_Q
+            | OpCode::OP_CHAR_NUMERIC_Q
+            | OpCode::OP_CHAR_WHITESPACE_Q
+            | OpCode::OP_CALL_WITH_VALUES => self.simple_instruction(opcode.name(), offset),
 
             // Instructions with constant operand
-            OpCode::OP_CONSTANT => {
-                self.constant_instruction("OP_CONSTANT", chunk, offset)
-            }
+            OpCode::OP_CONSTANT => self.constant_instruction("OP_CONSTANT", chunk, offset),
 
             // Instructions with byte operand
-            OpCode::OP_GET_LOCAL | OpCode::OP_SET_LOCAL |
-            OpCode::OP_GET_UPVALUE | OpCode::OP_SET_UPVALUE |
-            OpCode::OP_CALL | OpCode::OP_CLOSE_UPVALUE |
-            OpCode::OP_VECTOR => {
-                self.byte_instruction(opcode.name(), chunk, offset)
-            }
+            OpCode::OP_GET_LOCAL
+            | OpCode::OP_SET_LOCAL
+            | OpCode::OP_GET_UPVALUE
+            | OpCode::OP_SET_UPVALUE
+            | OpCode::OP_CALL
+            | OpCode::OP_CLOSE_UPVALUE
+            | OpCode::OP_VECTOR
+            | OpCode::OP_RETURN_VALUES => self.byte_instruction(opcode.name(), chunk, offset),
 
             // Instructions with global name operand
-            OpCode::OP_GET_GLOBAL | OpCode::OP_DEFINE_GLOBAL |
-            OpCode::OP_SET_GLOBAL => {
+            OpCode::OP_GET_GLOBAL | OpCode::OP_DEFINE_GLOBAL | OpCode::OP_SET_GLOBAL => {
                 self.constant_instruction(opcode.name(), chunk, offset)
             }
 
@@ -435,14 +491,10 @@ impl Disassembler {
             }
 
             // Loop instruction (jumps backward)
-            OpCode::OP_LOOP => {
-                self.jump_instruction(opcode.name(), -1, chunk, offset)
-            }
+            OpCode::OP_LOOP => self.jump_instruction(opcode.name(), -1, chunk, offset),
 
             // Closure instruction (variable operands)
-            OpCode::OP_CLOSURE => {
-                self.closure_instruction("OP_CLOSURE", chunk, offset)
-            }
+            OpCode::OP_CLOSURE => self.closure_instruction("OP_CLOSURE", chunk, offset),
         }
     }
 
@@ -456,13 +508,13 @@ impl Disassembler {
     fn constant_instruction(&self, name: &str, chunk: &Chunk, offset: usize) -> usize {
         let constant_index = chunk.get_byte(offset + 1).unwrap_or(0);
         print!("{:<16} {:4} '", name, constant_index);
-        
+
         if let Some(constant) = chunk.constants.get(constant_index as usize) {
             self.print_value(constant);
         } else {
             print!("INVALID_CONSTANT");
         }
-        
+
         println!("'");
         offset + 2
     }
@@ -489,13 +541,13 @@ impl Disassembler {
         current_offset += 1;
 
         print!("{:<16} {:4} ", name, constant_index);
-        
+
         if let Some(constant) = chunk.constants.get(constant_index as usize) {
             self.print_value(constant);
         } else {
             print!("INVALID_CONSTANT");
         }
-        
+
         println!();
 
         // Print upvalue information
@@ -506,11 +558,13 @@ impl Disassembler {
                         let is_local = chunk.get_byte(current_offset).unwrap_or(0);
                         let index = chunk.get_byte(current_offset + 1).unwrap_or(0);
                         current_offset += 2;
-                        
-                        println!("{:04}      |                     {} {}",
-                                current_offset - 2,
-                                if is_local != 0 { "local" } else { "upvalue" },
-                                index);
+
+                        println!(
+                            "{:04}      |                     {} {}",
+                            current_offset - 2,
+                            if is_local != 0 { "local" } else { "upvalue" },
+                            index
+                        );
                     }
                 }
             }
@@ -536,7 +590,9 @@ impl Disassembler {
                         crate::object::Object::Cons(_) => print!("<cons>"),
                         crate::object::Object::Vector(_) => print!("<vector>"),
                         crate::object::Object::Hashtable(_) => print!("<hashtable>"),
-                        crate::object::Object::Builtin(builtin) => print!("<builtin {}>", builtin.name),
+                        crate::object::Object::Builtin(builtin) => {
+                            print!("<builtin {}>", builtin.name)
+                        }
                         crate::object::Object::Upvalue(_) => print!("<upvalue>"),
                     }
                 } else {
@@ -560,31 +616,38 @@ impl Disassembler {
         let opcode = OpCode::from_byte(instruction_byte);
 
         match opcode {
-            Some(op) => {
-                match op {
-                    OpCode::OP_CONSTANT => {
-                        let constant_index = chunk.get_byte(offset + 1).unwrap_or(0);
-                        if let Some(constant) = chunk.constants.get(constant_index as usize) {
-                            format!("OP_CONSTANT {} ({})", constant_index, self.value_to_string(constant))
-                        } else {
-                            format!("OP_CONSTANT {} (INVALID)", constant_index)
-                        }
+            Some(op) => match op {
+                OpCode::OP_CONSTANT => {
+                    let constant_index = chunk.get_byte(offset + 1).unwrap_or(0);
+                    if let Some(constant) = chunk.constants.get(constant_index as usize) {
+                        format!(
+                            "OP_CONSTANT {} ({})",
+                            constant_index,
+                            self.value_to_string(constant)
+                        )
+                    } else {
+                        format!("OP_CONSTANT {} (INVALID)", constant_index)
                     }
-                    OpCode::OP_GET_LOCAL | OpCode::OP_SET_LOCAL |
-                    OpCode::OP_GET_UPVALUE | OpCode::OP_SET_UPVALUE |
-                    OpCode::OP_CALL | OpCode::OP_CLOSE_UPVALUE |
-                    OpCode::OP_VECTOR => {
-                        let operand = chunk.get_byte(offset + 1).unwrap_or(0);
-                        format!("{} {}", op.name(), operand)
-                    }
-                    OpCode::OP_JUMP | OpCode::OP_JUMP_IF_FALSE | OpCode::OP_LOOP => {
-                        let jump = chunk.get_short(offset + 1).unwrap_or(0);
-                        format!("{} {}", op.name(), jump)
-                    }
-                    _ => op.name().to_string()
                 }
-            }
-            None => format!("UNKNOWN {}", instruction_byte)
+                OpCode::OP_GET_LOCAL
+                | OpCode::OP_SET_LOCAL
+                | OpCode::OP_GET_UPVALUE
+                | OpCode::OP_SET_UPVALUE
+                | OpCode::OP_CALL
+                | OpCode::OP_CLOSE_UPVALUE
+                | OpCode::OP_VECTOR
+                | OpCode::OP_RETURN_VALUES => {
+                    let operand = chunk.get_byte(offset + 1).unwrap_or(0);
+                    format!("{} {}", op.name(), operand)
+                }
+                OpCode::OP_JUMP | OpCode::OP_JUMP_IF_FALSE | OpCode::OP_LOOP => {
+                    let jump = chunk.get_short(offset + 1).unwrap_or(0);
+                    format!("{} {}", op.name(), jump)
+                }
+                OpCode::OP_CALL_WITH_VALUES => op.name().to_string(),
+                _ => op.name().to_string(),
+            },
+            None => format!("UNKNOWN {}", instruction_byte),
         }
     }
 
@@ -592,7 +655,13 @@ impl Disassembler {
     fn value_to_string(&self, value: &Value) -> String {
         match value {
             Value::Number(n) => n.to_string(),
-            Value::Boolean(b) => if *b { "#t".to_string() } else { "#f".to_string() },
+            Value::Boolean(b) => {
+                if *b {
+                    "#t".to_string()
+                } else {
+                    "#f".to_string()
+                }
+            }
             Value::Nil => "nil".to_string(),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
@@ -605,7 +674,9 @@ impl Disassembler {
                         crate::object::Object::Cons(_) => "<cons>".to_string(),
                         crate::object::Object::Vector(_) => "<vector>".to_string(),
                         crate::object::Object::Hashtable(_) => "<hashtable>".to_string(),
-                        crate::object::Object::Builtin(builtin) => format!("<builtin {}>", builtin.name),
+                        crate::object::Object::Builtin(builtin) => {
+                            format!("<builtin {}>", builtin.name)
+                        }
                         crate::object::Object::Upvalue(_) => "<upvalue>".to_string(),
                     }
                 } else {
@@ -693,7 +764,7 @@ mod tests {
     fn test_chunk_write_byte() {
         let mut chunk = Chunk::new();
         chunk.write_byte(42, 1);
-        
+
         assert_eq!(chunk.count(), 1);
         assert_eq!(chunk.get_byte(0), Some(42));
         assert_eq!(chunk.get_line(0), Some(1));
@@ -703,7 +774,7 @@ mod tests {
     fn test_chunk_write_instruction() {
         let mut chunk = Chunk::new();
         chunk.write_instruction(OpCode::OP_NIL, 1);
-        
+
         assert_eq!(chunk.count(), 1);
         assert_eq!(chunk.get_byte(0), Some(OpCode::OP_NIL.to_byte()));
         assert_eq!(chunk.get_line(0), Some(1));
@@ -713,7 +784,7 @@ mod tests {
     fn test_chunk_write_instruction_with_byte() {
         let mut chunk = Chunk::new();
         chunk.write_instruction_with_byte(OpCode::OP_CONSTANT, 5, 1);
-        
+
         assert_eq!(chunk.count(), 2);
         assert_eq!(chunk.get_byte(0), Some(OpCode::OP_CONSTANT.to_byte()));
         assert_eq!(chunk.get_byte(1), Some(5));
@@ -725,7 +796,7 @@ mod tests {
     fn test_chunk_write_instruction_with_short() {
         let mut chunk = Chunk::new();
         chunk.write_instruction_with_short(OpCode::OP_JUMP, 0x1234, 1);
-        
+
         assert_eq!(chunk.count(), 3);
         assert_eq!(chunk.get_byte(0), Some(OpCode::OP_JUMP.to_byte()));
         assert_eq!(chunk.get_short(1), Some(0x1234));
@@ -735,17 +806,19 @@ mod tests {
     #[test]
     fn test_chunk_constants() {
         let mut chunk = Chunk::new();
-        
+
         // Add constants
         let index1 = chunk.add_constant(Value::Number(42.0));
         let index2 = chunk.add_constant(Value::Boolean(true));
-        
+
         assert_eq!(index1, 0);
         assert_eq!(index2, 1);
         assert_eq!(chunk.constants.len(), 2);
-        
+
         // Write constant instruction
-        chunk.write_constant(Value::string("hello".to_string()), 1).unwrap();
+        chunk
+            .write_constant(Value::string("hello".to_string()), 1)
+            .unwrap();
         assert_eq!(chunk.constants.len(), 3);
         assert_eq!(chunk.count(), 2); // OP_CONSTANT + index
     }
@@ -753,18 +826,18 @@ mod tests {
     #[test]
     fn test_chunk_jump_patching() {
         let mut chunk = Chunk::new();
-        
+
         // Write a jump instruction with placeholder
         chunk.write_instruction_with_short(OpCode::OP_JUMP, 0, 1);
         let jump_offset = chunk.count() - 3;
-        
+
         // Add some more instructions
         chunk.write_instruction(OpCode::OP_NIL, 1);
         chunk.write_instruction(OpCode::OP_RETURN, 1);
-        
+
         // Patch the jump
         chunk.patch_jump(jump_offset).unwrap();
-        
+
         // The jump should now point to the instruction after the added ones
         let jump_distance = chunk.get_short(jump_offset + 1).unwrap();
         assert_eq!(jump_distance, 2); // 2 instructions added after jump
@@ -773,21 +846,24 @@ mod tests {
     #[test]
     fn test_chunk_loop_emission() {
         let mut chunk = Chunk::new();
-        
+
         // Mark loop start
         let loop_start = chunk.count();
-        
+
         // Add some loop body instructions
         chunk.write_instruction(OpCode::OP_NIL, 1);
         chunk.write_instruction(OpCode::OP_POP, 1);
-        
+
         // Emit loop instruction
         chunk.emit_loop(loop_start, 1).unwrap();
-        
+
         // Check that loop instruction was added
         let loop_instruction_offset = chunk.count() - 3;
-        assert_eq!(chunk.get_byte(loop_instruction_offset), Some(OpCode::OP_LOOP.to_byte()));
-        
+        assert_eq!(
+            chunk.get_byte(loop_instruction_offset),
+            Some(OpCode::OP_LOOP.to_byte())
+        );
+
         // Check jump distance
         let jump_distance = chunk.get_short(loop_instruction_offset + 1).unwrap();
         assert_eq!(jump_distance, 5); // 2 body instructions + 3 for loop instruction
@@ -796,7 +872,7 @@ mod tests {
     #[test]
     fn test_chunk_bounds_checking() {
         let chunk = Chunk::new();
-        
+
         // Test out-of-bounds access
         assert_eq!(chunk.get_byte(0), None);
         assert_eq!(chunk.get_short(0), None);
@@ -807,22 +883,25 @@ mod tests {
     fn test_disassembler_creation() {
         let disassembler = Disassembler::new();
         let default_disassembler = Disassembler::default();
-        
+
         // Just test that they can be created
-        assert_eq!(std::mem::size_of_val(&disassembler), std::mem::size_of_val(&default_disassembler));
+        assert_eq!(
+            std::mem::size_of_val(&disassembler),
+            std::mem::size_of_val(&default_disassembler)
+        );
     }
 
     #[test]
     fn test_disassembler_simple_instructions() {
         let disassembler = Disassembler::new();
         let mut chunk = Chunk::new();
-        
+
         // Add some simple instructions
         chunk.write_instruction(OpCode::OP_NIL, 1);
         chunk.write_instruction(OpCode::OP_TRUE, 1);
         chunk.write_instruction(OpCode::OP_FALSE, 1);
         chunk.write_instruction(OpCode::OP_RETURN, 1);
-        
+
         // Test instruction string representation
         assert_eq!(disassembler.instruction_to_string(&chunk, 0), "OP_NIL");
         assert_eq!(disassembler.instruction_to_string(&chunk, 1), "OP_TRUE");
@@ -834,10 +913,10 @@ mod tests {
     fn test_disassembler_constant_instruction() {
         let disassembler = Disassembler::new();
         let mut chunk = Chunk::new();
-        
+
         // Add a constant instruction
         chunk.write_constant(Value::Number(42.0), 1).unwrap();
-        
+
         let instruction_str = disassembler.instruction_to_string(&chunk, 0);
         assert!(instruction_str.contains("OP_CONSTANT"));
         assert!(instruction_str.contains("42"));
@@ -847,10 +926,10 @@ mod tests {
     fn test_disassembler_byte_instruction() {
         let disassembler = Disassembler::new();
         let mut chunk = Chunk::new();
-        
+
         // Add a byte instruction
         chunk.write_instruction_with_byte(OpCode::OP_GET_LOCAL, 5, 1);
-        
+
         let instruction_str = disassembler.instruction_to_string(&chunk, 0);
         assert_eq!(instruction_str, "OP_GET_LOCAL 5");
     }
@@ -859,10 +938,10 @@ mod tests {
     fn test_disassembler_jump_instruction() {
         let disassembler = Disassembler::new();
         let mut chunk = Chunk::new();
-        
+
         // Add a jump instruction
         chunk.write_instruction_with_short(OpCode::OP_JUMP, 100, 1);
-        
+
         let instruction_str = disassembler.instruction_to_string(&chunk, 0);
         assert_eq!(instruction_str, "OP_JUMP 100");
     }
@@ -870,17 +949,17 @@ mod tests {
     #[test]
     fn test_disassembler_value_to_string() {
         let disassembler = Disassembler::new();
-        
+
         // Test different value types
         assert_eq!(disassembler.value_to_string(&Value::Number(3.14)), "3.14");
         assert_eq!(disassembler.value_to_string(&Value::Boolean(true)), "#t");
         assert_eq!(disassembler.value_to_string(&Value::Boolean(false)), "#f");
         assert_eq!(disassembler.value_to_string(&Value::Nil), "nil");
-        
+
         // Test string value
         let string_val = Value::string("hello".to_string());
         assert_eq!(disassembler.value_to_string(&string_val), "\"hello\"");
-        
+
         // Test character value
         let char_val = Value::character('x');
         assert_eq!(disassembler.value_to_string(&char_val), "#\\x");
@@ -890,10 +969,10 @@ mod tests {
     fn test_disassembler_unknown_opcode() {
         let disassembler = Disassembler::new();
         let mut chunk = Chunk::new();
-        
+
         // Add an invalid opcode
         chunk.write_byte(255, 1);
-        
+
         let instruction_str = disassembler.instruction_to_string(&chunk, 0);
         assert_eq!(instruction_str, "UNKNOWN 255");
     }
@@ -902,12 +981,12 @@ mod tests {
     fn test_disassemble_instruction_offset() {
         let disassembler = Disassembler::new();
         let mut chunk = Chunk::new();
-        
+
         // Add various instructions
-        chunk.write_instruction(OpCode::OP_NIL, 1);                    // offset 0, size 1
-        chunk.write_instruction_with_byte(OpCode::OP_CONSTANT, 0, 1);  // offset 1, size 2
-        chunk.write_instruction_with_short(OpCode::OP_JUMP, 10, 1);    // offset 3, size 3
-        
+        chunk.write_instruction(OpCode::OP_NIL, 1); // offset 0, size 1
+        chunk.write_instruction_with_byte(OpCode::OP_CONSTANT, 0, 1); // offset 1, size 2
+        chunk.write_instruction_with_short(OpCode::OP_JUMP, 10, 1); // offset 3, size 3
+
         // Test that disassemble_instruction returns correct next offsets
         assert_eq!(disassembler.disassemble_instruction(&chunk, 0), 1);
         assert_eq!(disassembler.disassemble_instruction(&chunk, 1), 3);

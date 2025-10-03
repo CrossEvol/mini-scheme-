@@ -7,20 +7,20 @@
   - Clean up any existing MultipleValues usage in VM and compiler
   - _Requirements: 3.5, 3.6_
 
-- [ ] 2. Add new bytecode instructions for multiple values
-  - [ ] 2.1 Add OP_RETURN_VALUES and OP_CALL_WITH_VALUES to OpCode enum
+- [x] 2. Add new bytecode instructions for multiple values
+  - [x] 2.1 Add OP_RETURN_VALUES and OP_CALL_WITH_VALUES to OpCode enum
     - Add `OP_RETURN_VALUES = 46` to handle multiple return values
     - Add `OP_CALL_WITH_VALUES = 47` to coordinate producer/consumer calls
     - Update `from_byte()`, `to_byte()`, and `name()` methods
     - _Requirements: 3.1, 3.2_
 
-  - [ ] 2.2 Update instruction size and operand handling
+  - [x] 2.2 Update instruction size and operand handling
     - Set `OP_RETURN_VALUES` instruction size to 2 bytes (opcode + value count)
     - Set `OP_CALL_WITH_VALUES` instruction size to 1 byte (no operands)
     - Update `instruction_size()`, `has_operands()`, and `operand_count()` methods
     - _Requirements: 3.1, 3.2_
 
-  - [ ] 2.3 Update disassembler for new instructions
+  - [x] 2.3 Update disassembler for new instructions
     - Add disassembly support for `OP_RETURN_VALUES` with value count display
     - Add disassembly support for `OP_CALL_WITH_VALUES`
     - Update `disassemble_opcode()` and `instruction_to_string()` methods
