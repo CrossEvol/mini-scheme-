@@ -11,8 +11,6 @@ pub enum Value {
     Boolean(bool),
     Nil,
     Object(Rc<RefCell<Object>>),
-    /// Multiple values - used for values function
-    MultipleValues(Vec<Value>),
 }
 
 /// Object types for heap-allocated Scheme values
@@ -202,10 +200,7 @@ impl Value {
         Value::Object(Rc::new(RefCell::new(Object::Builtin(BuiltinFunction { name, arity }))))
     }
 
-    /// Create a multiple values value
-    pub fn multiple_values(values: Vec<Value>) -> Self {
-        Value::MultipleValues(values)
-    }
+
 
     // Type checking methods
     
@@ -301,10 +296,7 @@ impl Value {
         self.is_function() || self.is_closure() || self.is_builtin()
     }
 
-    /// Check if this value is multiple values
-    pub fn is_multiple_values(&self) -> bool {
-        matches!(self, Value::MultipleValues(_))
-    }
+
 
     // Safe value extraction methods
 
@@ -415,13 +407,7 @@ impl Value {
         }
     }
 
-    /// Extract multiple values, returns None if not multiple values
-    pub fn as_multiple_values(&self) -> Option<Vec<Value>> {
-        match self {
-            Value::MultipleValues(values) => Some(values.clone()),
-            _ => None,
-        }
-    }
+
 
     /// Check if this value is truthy (everything except #f is truthy in Scheme)
     pub fn is_truthy(&self) -> bool {
@@ -447,7 +433,6 @@ impl PartialEq for Value {
                 // For objects, we compare by reference (eq? semantics)
                 Rc::ptr_eq(a, b)
             }
-            (Value::MultipleValues(a), Value::MultipleValues(b)) => a == b,
             _ => false,
         }
     }
@@ -470,14 +455,6 @@ impl fmt::Display for Value {
             Value::Boolean(true) => write!(f, "#t"),
             Value::Boolean(false) => write!(f, "#f"),
             Value::Nil => write!(f, "()"),
-            Value::MultipleValues(values) => {
-                // Display multiple values on separate lines
-                for (i, val) in values.iter().enumerate() {
-                    if i > 0 { writeln!(f)?; }
-                    write!(f, "{}", val)?;
-                }
-                Ok(())
-            }
             Value::Object(obj) => {
                 match &*obj.borrow() {
                     Object::String(s) => write!(f, "\"{}\"", s),
@@ -545,9 +522,6 @@ impl Value {
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
-            (Value::MultipleValues(a), Value::MultipleValues(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equal(y))
-            }
             (Value::Object(a), Value::Object(b)) => {
                 match (&*a.borrow(), &*b.borrow()) {
                     (Object::String(s1), Object::String(s2)) => s1 == s2,

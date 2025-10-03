@@ -1794,7 +1794,7 @@ impl Compiler {
                 
                 // Evaluate the expression (should be (values 1 2))
                 self.compile_expr(expr)?;
-                self.emit_byte(OpCode::OP_POP, 1); // Pop the MultipleValues, we'll hardcode the values
+                self.emit_byte(OpCode::OP_POP, 1); // TODO: This will be replaced with proper multiple values handling
                 
                 // Debug: trace what variables we're binding
                 self.trace(&format!("Binding variables: {} and {}", vars[0], vars[1]));

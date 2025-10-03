@@ -255,14 +255,6 @@ impl VM {
             Value::Number(n) => print!("{}", n),
             Value::Boolean(b) => print!("{}", if *b { "#t" } else { "#f" }),
             Value::Nil => print!("nil"),
-            Value::MultipleValues(values) => {
-                print!("(values");
-                for val in values {
-                    print!(" ");
-                    self.print_value(val);
-                }
-                print!(")");
-            }
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -1206,15 +1198,6 @@ impl VM {
                 }
             }
             Value::Nil => "nil".to_string(),
-            Value::MultipleValues(values) => {
-                let mut result = String::from("(values");
-                for val in values {
-                    result.push(' ');
-                    result.push_str(&self.format_value_for_trace(val));
-                }
-                result.push(')');
-                result
-            }
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -2578,20 +2561,6 @@ impl VM {
                 if *b { 1 } else { 0 }
             }
             Value::Nil => 0,
-            Value::MultipleValues(values) => {
-                // Hash multiple values by combining their hashes
-                let mut hash: u32 = 2000;
-                for val in values {
-                    // Simple hash combination - this could be improved
-                    hash = hash.wrapping_mul(31).wrapping_add(match val {
-                        Value::Number(n) => n.to_bits() as u32,
-                        Value::Boolean(b) => if *b { 1 } else { 0 },
-                        Value::Nil => 0,
-                        _ => 1000, // Simplified for other types
-                    });
-                }
-                hash
-            }
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -2744,8 +2713,13 @@ impl VM {
             // Single value - just push it back (optimization)
             self.push(values.into_iter().next().unwrap())?;
         } else {
-            // Multiple values - create a MultipleValues
-            self.push(Value::multiple_values(values))?;
+            // TODO: This will be replaced with OP_RETURN_VALUES in task 4
+            // For now, just return the first value to avoid compilation errors
+            if !values.is_empty() {
+                self.push(values.into_iter().next().unwrap())?;
+            } else {
+                self.push(Value::Nil)?;
+            }
         }
         
         Ok(())
@@ -2834,6 +2808,9 @@ impl VM {
 
         // Destructure the values
         match values_to_destructure {
+            // TODO: MultipleValues support will be replaced in later tasks
+            // For now, treat everything as single values
+            /*
             Value::MultipleValues(values) => {
                 if values.len() != expected_count {
                     return Err(RuntimeError::ArityMismatch {
@@ -2847,6 +2824,7 @@ impl VM {
                     self.push(value)?;
                 }
             }
+            */
             single_value => {
                 if expected_count != 1 {
                     return Err(RuntimeError::ArityMismatch {
@@ -2896,6 +2874,9 @@ impl VM {
 
         // Destructure the values
         match values_to_destructure {
+            // TODO: MultipleValues support will be replaced in later tasks
+            // For now, treat everything as single values
+            /*
             Value::MultipleValues(values) => {
                 if values.len() != expected_count {
                     return Err(RuntimeError::ArityMismatch {
@@ -2913,6 +2894,7 @@ impl VM {
                     self.push(value)?;
                 }
             }
+            */
             single_value => {
                 if expected_count != 1 {
                     return Err(RuntimeError::ArityMismatch {
@@ -2956,6 +2938,9 @@ impl VM {
 
         // Extract the value at the given index
         match values_to_extract_from {
+            // TODO: MultipleValues support will be replaced in later tasks
+            // For now, treat everything as single values
+            /*
             Value::MultipleValues(values) => {
                 if index >= values.len() {
                     return Err(RuntimeError::InvalidOperation(format!(
@@ -2968,6 +2953,7 @@ impl VM {
                 // Push the value at the specified index
                 self.push(values[index].clone())?;
             }
+            */
             single_value => {
                 if index != 0 {
                     return Err(RuntimeError::InvalidOperation(format!(
@@ -2990,7 +2976,7 @@ impl VM {
             Value::Number(_) => "number".to_string(),
             Value::Boolean(_) => "boolean".to_string(),
             Value::Nil => "nil".to_string(),
-            Value::MultipleValues(_) => "multiple values".to_string(),
+
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {

@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Remove MultipleValues type and update Value enum
+- [x] 1. Remove MultipleValues type and update Value enum
   - Remove `MultipleValues(Vec<Value>)` variant from `Value` enum in `src/object.rs`
   - Remove all associated methods: `multiple_values()`, `is_multiple_values()`, `as_multiple_values()`
   - Update `Display` and `PartialEq` implementations to remove MultipleValues handling
