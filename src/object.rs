@@ -432,13 +432,23 @@ impl Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            // Numbers: direct value comparison (they're not objects)
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             (Value::MultipleValues, Value::MultipleValues) => true,
             (Value::Object(a), Value::Object(b)) => {
-                // For objects, we compare by reference (eq? semantics)
-                Rc::ptr_eq(a, b)
+                // First check by reference (address)
+                if Rc::ptr_eq(a, b) {
+                    return true;
+                }
+                
+                // For characters and symbols, fall back to value comparison
+                match (&*a.borrow(), &*b.borrow()) {
+                    (Object::Character(c1), Object::Character(c2)) => c1 == c2,
+                    (Object::Symbol(s1), Object::Symbol(s2)) => s1 == s2,
+                    _ => false, // For other objects, only reference equality
+                }
             }
             _ => false,
         }
