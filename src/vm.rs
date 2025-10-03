@@ -693,17 +693,113 @@ impl VM {
                     // Set multiple value context for producer call
                     self.in_multiple_value_context = true;
 
-                    // For now, push producer back on stack and call it with 0 arguments
-                    // The full implementation would require state machine to handle
-                    // the producer call, capture results, then call consumer
+                    // Step 1: Execute producer and capture return values
                     self.push(producer)?;
                     self.call_value(0)?;
+                    
+                    // Execute the producer function until completion
+                    let result = self.run_single_call()?;
 
-                    // TODO: Complete implementation requires:
-                    // 1. Execute producer and capture return values
-                    // 2. Validate consumer arity matches produced values
-                    // 3. Call consumer with produced values as arguments
-                    // 4. Reset return count metadata
+                    // After producer call, check if we have multiple values or single value
+                    let produced_values = if let Some(count) = self.last_return_count {
+                        // Multiple values were returned - they are on the stack
+                        let mut values = Vec::new();
+                        for i in 0..count {
+                            values.push(self.peek(count - 1 - i)?.clone());
+                        }
+                        // Pop all the values from the stack
+                        for _ in 0..count {
+                            self.pop()?;
+                        }
+                        // Reset the return count
+                        self.last_return_count = None;
+                        values
+                    } else {
+                        // Single value was returned - it's the result from run_single_call
+                        vec![result]
+                    };
+
+                    // Step 2: Validate consumer arity matches produced values
+                    let consumer_arity = match &consumer {
+                        Value::Object(obj) => {
+                            if let Ok(obj_ref) = obj.try_borrow() {
+                                match &*obj_ref {
+                                    Object::Closure(closure) => closure.function.arity,
+                                    Object::Function(function) => function.arity,
+                                    Object::Builtin(builtin) => {
+                                        // For variadic builtins (arity 0), accept any number of args
+                                        if builtin.arity == 0 {
+                                            produced_values.len()
+                                        } else {
+                                            builtin.arity
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(RuntimeError::TypeError {
+                                            expected: "function or closure".to_string(),
+                                            got: self.type_name(&consumer),
+                                        });
+                                    }
+                                }
+                            } else {
+                                return Err(RuntimeError::InvalidOperation(
+                                    "Cannot borrow consumer object".to_string(),
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(RuntimeError::TypeError {
+                                expected: "function or closure".to_string(),
+                                got: self.type_name(&consumer),
+                            });
+                        }
+                    };
+
+                    // Check arity match (unless consumer is variadic builtin)
+                    let is_variadic_builtin = match &consumer {
+                        Value::Object(obj) => {
+                            if let Ok(obj_ref) = obj.try_borrow() {
+                                matches!(&*obj_ref, Object::Builtin(builtin) if builtin.arity == 0)
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+
+                    if !is_variadic_builtin && consumer_arity != produced_values.len() {
+                        return Err(RuntimeError::ConsumerArityMismatch {
+                            expected: produced_values.len(),
+                            got: consumer_arity,
+                        });
+                    }
+
+                    // Step 3: Call consumer with produced values as arguments
+                    // Push consumer onto stack
+                    self.push(consumer)?;
+
+                    // Push all produced values as arguments
+                    for value in produced_values {
+                        self.push(value)?;
+                    }
+
+                    // Call the consumer with the produced values
+                    let arg_count = if is_variadic_builtin {
+                        // For variadic builtins, pass the actual number of values
+                        if let Some(count) = self.last_return_count {
+                            count
+                        } else {
+                            1
+                        }
+                    } else {
+                        consumer_arity
+                    };
+
+                    self.call_value(arg_count)?;
+
+                    // Step 4: Reset return count metadata
+                    self.in_multiple_value_context = false;
+                    // Note: last_return_count will be set by the consumer's return
 
                     Ok(())
                 }
@@ -849,7 +945,8 @@ impl VM {
                             self.validate_value_context(value_count)?;
                         }
                     } else {
-                        self.validate_value_context(value_count)?;
+                        self.in_multiple_value_context = true;
+                        // self.validate_value_context(value_count)?;
                     }
 
                     // Set return count metadata
@@ -866,19 +963,19 @@ impl VM {
                             self.complete_execution_trace(trace);
                         }
                         // End of program - for multiple values at top level, store in buffer
-                        if value_count > 1 {
+                        return if value_count > 1 {
                             // Store all values in buffer for later processing
                             self.multiple_values_buffer.clear();
                             for i in 0..value_count {
                                 let value = self.peek(value_count - 1 - i)?;
                                 self.multiple_values_buffer.push(value.clone());
                             }
-                            return Ok(Value::MultipleValues); // Return flag to indicate multiple values
+                            Ok(Value::MultipleValues) // Return flag to indicate multiple values
                         } else if value_count == 1 {
-                            return Ok(self.peek(0)?.clone());
+                            Ok(self.peek(0)?.clone())
                         } else {
-                            return Ok(Value::Nil);
-                        }
+                            Ok(Value::Nil)
+                        };
                     }
 
                     // Restore stack to frame boundary, keeping the return values on top
@@ -894,8 +991,19 @@ impl VM {
                         }
                     }
 
-                    self.stack_top = new_stack_top;
-                    Ok(())
+                    if value_count > 1 {
+                        // Store all values in buffer for later processing
+                        self.multiple_values_buffer.clear();
+                        for i in 0..value_count {
+                            let value = self.peek(value_count - 1 - i)?;
+                            self.multiple_values_buffer.push(value.clone());
+                        }
+                        self.stack_top = new_stack_top;
+                        return Ok(Value::MultipleValues);
+                    } else {
+                        self.stack_top = new_stack_top;
+                        Ok(())
+                    }
                 }
 
                 OpCode::OP_CONS => {
@@ -2405,12 +2513,51 @@ impl VM {
 
                     if self.frame_count < initial_frame_count {
                         // We've returned from the original call
+                        // Reset multiple value context and return count for single value
+                        self.last_return_count = None;
                         return Ok(result);
                     }
 
                     // Restore stack to frame boundary and push result
                     self.stack_top = frame.slots;
                     self.push(result)?;
+                }
+                OpCode::OP_RETURN_VALUES => {
+                    let value_count = self.read_byte()? as usize;
+
+                    // Validate stack has sufficient values
+                    if self.stack_top < value_count {
+                        return Err(RuntimeError::StackUnderflow);
+                    }
+
+                    // Set return count metadata for multiple values
+                    self.last_return_count = Some(value_count);
+
+                    let frame = self.pop_frame()?;
+
+                    // Close any upvalues that are leaving scope
+                    self.close_upvalues(frame.slots);
+
+                    if self.frame_count < initial_frame_count {
+                        // We've returned from the original call with multiple values
+                        // The values are already on the stack, just return a placeholder
+                        // The caller will check last_return_count to handle multiple values
+                        return Ok(Value::MultipleValues);
+                    }
+
+                    // Restore stack to frame boundary, keeping the return values on top
+                    let new_stack_top = frame.slots + value_count;
+
+                    // Move the return values to the correct position if needed
+                    if frame.slots < self.stack_top - value_count {
+                        // Copy the return values to the frame boundary
+                        for i in 0..value_count {
+                            let value = self.stack[self.stack_top - value_count + i].clone();
+                            self.stack[frame.slots + i] = value;
+                        }
+                    }
+
+                    self.stack_top = new_stack_top;
                 }
                 // Add other essential opcodes as needed
                 _ => {
@@ -3211,7 +3358,7 @@ impl VM {
     /// Implement the values built-in function
     fn builtin_values(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
         // values can take any number of arguments and returns them as multiple values
-        
+
         if arg_count == 0 {
             // No arguments - return zero values (empty)
             // For now, we'll push nil to maintain stack consistency
@@ -3223,26 +3370,26 @@ impl VM {
             // Multiple arguments - we need to use OP_RETURN_VALUES
             // The arguments are already on the stack in the correct order
             // We need to emit an OP_RETURN_VALUES instruction with the count
-            
+
             // For now, let's create a simple implementation that works with our current setup
             // We'll collect all the values and store them in the buffer, then return MultipleValues
             self.multiple_values_buffer.clear();
-            
+
             // Collect all arguments from the stack (they're at the top)
             for i in 0..arg_count {
                 let value = self.peek(arg_count - 1 - i)?;
                 self.multiple_values_buffer.push(value.clone());
             }
-            
+
             // Pop all the arguments
             for _ in 0..arg_count {
                 self.pop()?;
             }
-            
+
             // Push the MultipleValues flag
             // self.push(Value::MultipleValues)?;
         }
-        
+
         Ok(())
     }
 

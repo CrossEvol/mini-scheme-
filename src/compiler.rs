@@ -1706,6 +1706,61 @@ impl Compiler {
         }
     }
 
+    /// Output a comprehensive compilation summary for tracing
+    fn output_compilation_summary(&self) {
+        use crate::bytecode::Disassembler;
+
+        println!("=== COMPILATION SUMMARY ===");
+
+        // Function information
+        println!("Function Name: {}", self.function.name);
+        println!("Function Arity: {}", self.function.arity);
+
+        // Chunk information (pretty printed bytecode)
+        println!("\nBytecode Chunk:");
+        let disassembler = Disassembler::new();
+        disassembler.disassemble_chunk(&self.function.chunk, &self.function.name);
+
+        // Local variables information
+        println!("\nLocal Variables:");
+        if self.locals.is_empty() {
+            println!("  (none)");
+        } else {
+            for (i, local) in self.locals.iter().enumerate() {
+                let status = if local.depth < 0 {
+                    "uninitialized"
+                } else {
+                    "initialized"
+                };
+                let captured = if local.is_captured { " (captured)" } else { "" };
+                println!(
+                    "  [{}] {} (depth: {}, {}){}",
+                    i, local.name, local.depth, status, captured
+                );
+            }
+        }
+
+        // Upvalues information
+        println!("\nUpvalues:");
+        if self.upvalues.is_empty() {
+            println!("  (none)");
+        } else {
+            for (i, upvalue) in self.upvalues.iter().enumerate() {
+                let source = if upvalue.is_local { "local" } else { "upvalue" };
+                println!("  [{}] captures {} at index {}", i, source, upvalue.index);
+            }
+        }
+
+        // Additional compiler state
+        println!("\nCompiler State:");
+        println!("  Scope Depth: {}", self.scope_depth);
+        println!("  Function Type: {:?}", self.function_type);
+        println!("  Constants Count: {}", self.function.chunk.constants.len());
+        println!("  Bytecode Size: {} bytes", self.function.chunk.code.len());
+
+        println!("=== END COMPILATION SUMMARY ===\n");
+    }
+
     /// Finish compilation and return the compiled function
     pub fn end_compiler(mut self) -> Function {
         self.trace("Ending compilation");
@@ -1715,6 +1770,13 @@ impl Compiler {
             || self.function.chunk.code.last() != Some(&OpCode::OP_RETURN.to_byte())
         {
             self.emit_byte(OpCode::OP_RETURN, 1);
+        }
+
+        if self.trace_enabled {
+            println!("DEBUG: trace_enabled = {}", self.trace_enabled);
+            println!("DEBUG: About to call output_compilation_summary");
+            self.output_compilation_summary();
+            println!("DEBUG: Finished calling output_compilation_summary");
         }
 
         self.function
@@ -1777,7 +1839,7 @@ impl Compiler {
 
         // For now, implement a simplified version that works for the basic test case
         // (let-values (((x y) (values 1 2))) (+ x y))
-        
+
         // This is not a general implementation, but it will work for the test
         for (vars, expr) in &let_values.bindings {
             if vars.len() == 1 {
@@ -1788,21 +1850,21 @@ impl Compiler {
             } else if vars.len() == 2 {
                 // Two variables case - for now, hardcode for the test case
                 // This is a simplified implementation that works for (values 1 2)
-                
+
                 // Evaluate the expression (should be (values 1 2))
                 self.compile_expr(expr)?;
                 self.emit_byte(OpCode::OP_POP, 1); // TODO: This will be replaced with proper multiple values handling
-                
+
                 // Debug: trace what variables we're binding
                 self.trace(&format!("Binding variables: {} and {}", vars[0], vars[1]));
-                
+
                 // Hardcode the bindings for the test case
                 // Bind first variable to 1
                 self.emit_constant(crate::object::Value::Number(1.0))?;
                 self.declare_local(vars[0].clone())?;
                 self.trace(&format!("Declared local {}, defining...", vars[0]));
                 self.define_local();
-                
+
                 // Bind second variable to 2
                 self.emit_constant(crate::object::Value::Number(2.0))?;
                 self.declare_local(vars[1].clone())?;
@@ -1811,7 +1873,7 @@ impl Compiler {
             } else {
                 // General case - not implemented yet
                 return Err(CompileError::NotImplemented(
-                    "General let-values with arbitrary variable patterns".to_string()
+                    "General let-values with arbitrary variable patterns".to_string(),
                 ));
             }
         }
@@ -2002,10 +2064,10 @@ impl Compiler {
 
         // Compile the producer expression (should be a lambda that takes no arguments)
         self.compile_expr(&call_with_values.producer)?;
-        
+
         // Compile the consumer expression (should be a lambda that takes the produced values)
         self.compile_expr(&call_with_values.consumer)?;
-        
+
         // Generate OP_CALL_WITH_VALUES instruction
         // The VM will handle popping consumer and producer from stack,
         // calling producer, then calling consumer with producer's results
@@ -2676,16 +2738,21 @@ mod tests {
             params: vec!["x".to_string(), "y".to_string()],
             body: vec![Expr::Call(
                 Box::new(Expr::Variable("+".to_string())),
-                vec![Expr::Variable("x".to_string()), Expr::Variable("y".to_string())],
+                vec![
+                    Expr::Variable("x".to_string()),
+                    Expr::Variable("y".to_string()),
+                ],
             )],
         }));
 
         let call_with_values = CallWithValuesExpr { producer, consumer };
 
-        compiler.compile_call_with_values(&call_with_values).unwrap();
+        compiler
+            .compile_call_with_values(&call_with_values)
+            .unwrap();
 
         let code = &compiler.function.chunk.code;
-        
+
         // The last instruction should be OP_CALL_WITH_VALUES
         let last_instruction = code[code.len() - 1];
         assert_eq!(last_instruction, OpCode::OP_CALL_WITH_VALUES.to_byte());
@@ -2698,6 +2765,9 @@ mod tests {
                 closure_count += 1;
             }
         }
-        assert_eq!(closure_count, 2, "Should have compiled producer and consumer lambdas");
+        assert_eq!(
+            closure_count, 2,
+            "Should have compiled producer and consumer lambdas"
+        );
     }
 }
