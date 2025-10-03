@@ -1777,10 +1777,10 @@ impl Compiler {
         Ok(())
     }
 
-    /// Compile a let* expression
+    /// Compile a let* expression by expanding it into nested let expressions
     fn compile_let_star(&mut self, let_star: &LetStarExpr) -> Result<(), CompileError> {
         self.trace(&format!(
-            "Compiling let* expression with {} bindings",
+            "Compiling let* expression with {} bindings (expanding to nested let)",
             let_star.bindings.len()
         ));
         self.trace_compilation_phase(
@@ -1788,33 +1788,45 @@ impl Compiler {
             &Expr::LetStar(Box::new(let_star.clone())),
         );
 
-        // Begin a new scope for the let* bindings
-        self.begin_scope();
-
-        // Compile bindings sequentially (each can refer to previous ones)
-        for (var_name, init_expr) in &let_star.bindings {
-            // Compile the value expression
-            self.compile_expr(init_expr)?;
-
-            // Declare and define the variable
-            self.declare_local(var_name.clone())?;
-            self.define_local();
+        // If no bindings, just compile the body as a begin block
+        if let_star.bindings.is_empty() {
+            return self.compile_begin(&let_star.body);
         }
 
-        // Compile the body
-        for (i, expr) in let_star.body.iter().enumerate() {
-            self.compile_expr(expr)?;
+        // Transform let* into nested let expressions
+        // (let* ((var1 val1) (var2 val2) ... (varn valn)) body...)
+        // becomes:
+        // (let ((var1 val1)) (let ((var2 val2)) ... (let ((varn valn)) body...) ...))
+        
+        let expanded_expr = self.expand_let_star_to_nested_let(&let_star.bindings, &let_star.body);
+        self.compile_expr(&expanded_expr)
+    }
 
-            // Pop intermediate results except for the last expression
-            if i < let_star.body.len() - 1 {
-                self.emit_byte(OpCode::OP_POP, 1);
+    /// Helper method to expand let* bindings into nested let expressions
+    fn expand_let_star_to_nested_let(&self, bindings: &[(String, Expr)], body: &[Expr]) -> Expr {
+        if bindings.is_empty() {
+            // No more bindings, return the body as a begin expression
+            if body.len() == 1 {
+                body[0].clone()
+            } else {
+                Expr::Begin(body.to_vec())
             }
+        } else {
+            // Take the first binding and create a let expression with the rest nested inside
+            let (var_name, var_value) = &bindings[0];
+            let remaining_bindings = &bindings[1..];
+            
+            // Recursively expand the remaining bindings
+            let nested_body = self.expand_let_star_to_nested_let(remaining_bindings, body);
+            
+            // Create a let expression with this binding and the nested structure as body
+            let let_expr = LetExpr {
+                bindings: vec![(var_name.clone(), var_value.clone())],
+                body: vec![nested_body],
+            };
+            
+            Expr::Let(Box::new(let_expr))
         }
-
-        // End the let* scope
-        self.end_scope();
-
-        Ok(())
     }
 
     /// Compile a define expression
@@ -2891,5 +2903,115 @@ mod tests {
             closure_count, 2,
             "Should have compiled producer and consumer lambdas"
         );
+    }
+
+    #[test]
+    fn test_let_star_expansion() {
+        use crate::ast::LetStarExpr;
+        
+        let compiler = Compiler::new_script();
+        
+        // Create a let* expression: (let* ((a 10) (b (+ a 5))) (+ a b))
+        let let_star = LetStarExpr {
+            bindings: vec![
+                ("a".to_string(), Expr::Number(10.0)),
+                ("b".to_string(), Expr::Call(
+                    Box::new(Expr::Variable("+".to_string())),
+                    vec![Expr::Variable("a".to_string()), Expr::Number(5.0)]
+                )),
+            ],
+            body: vec![Expr::Call(
+                Box::new(Expr::Variable("+".to_string())),
+                vec![Expr::Variable("a".to_string()), Expr::Variable("b".to_string())]
+            )],
+        };
+        
+        // Test the expansion method
+        let expanded = compiler.expand_let_star_to_nested_let(&let_star.bindings, &let_star.body);
+        
+        // The expanded form should be a nested let structure
+        match expanded {
+            Expr::Let(outer_let) => {
+                // Outer let should bind 'a' to 10
+                assert_eq!(outer_let.bindings.len(), 1);
+                assert_eq!(outer_let.bindings[0].0, "a");
+                assert!(matches!(outer_let.bindings[0].1, Expr::Number(10.0)));
+                
+                // Body should be another let expression
+                assert_eq!(outer_let.body.len(), 1);
+                match &outer_let.body[0] {
+                    Expr::Let(inner_let) => {
+                        // Inner let should bind 'b' to (+ a 5)
+                        assert_eq!(inner_let.bindings.len(), 1);
+                        assert_eq!(inner_let.bindings[0].0, "b");
+                        // The value should be a call to +
+                        assert!(matches!(inner_let.bindings[0].1, Expr::Call(_, _)));
+                    }
+                    _ => panic!("Expected inner let expression"),
+                }
+            }
+            _ => panic!("Expected outer let expression"),
+        }
+    }
+
+    #[test]
+    fn test_let_star_empty_bindings() {
+        let compiler = Compiler::new_script();
+        
+        // Test let* with no bindings: (let* () body)
+        let let_star = LetStarExpr {
+            bindings: vec![],
+            body: vec![Expr::Number(42.0)],
+        };
+        
+        let expanded = compiler.expand_let_star_to_nested_let(&let_star.bindings, &let_star.body);
+        
+        // Should just return the body expression directly
+        assert!(matches!(expanded, Expr::Number(42.0)));
+    }
+
+    #[test]
+    fn test_let_star_single_binding() {
+        let compiler = Compiler::new_script();
+        
+        // Test let* with single binding: (let* ((x 5)) x)
+        let let_star = LetStarExpr {
+            bindings: vec![("x".to_string(), Expr::Number(5.0))],
+            body: vec![Expr::Variable("x".to_string())],
+        };
+        
+        let expanded = compiler.expand_let_star_to_nested_let(&let_star.bindings, &let_star.body);
+        
+        // Should expand to a single let expression
+        match expanded {
+            Expr::Let(let_expr) => {
+                assert_eq!(let_expr.bindings.len(), 1);
+                assert_eq!(let_expr.bindings[0].0, "x");
+                assert!(matches!(let_expr.bindings[0].1, Expr::Number(5.0)));
+                assert_eq!(let_expr.body.len(), 1);
+                assert!(matches!(let_expr.body[0], Expr::Variable(_)));
+            }
+            _ => panic!("Expected let expression"),
+        }
+    }
+
+    #[test]
+    fn test_let_star_compilation() {
+        let mut compiler = Compiler::new_script();
+        
+        // Test that let* actually compiles without errors
+        let let_star = LetStarExpr {
+            bindings: vec![
+                ("a".to_string(), Expr::Number(10.0)),
+                ("b".to_string(), Expr::Variable("a".to_string())),
+            ],
+            body: vec![Expr::Variable("b".to_string())],
+        };
+        
+        let result = compiler.compile_let_star(&let_star);
+        assert!(result.is_ok());
+        
+        // Should have generated some bytecode
+        assert!(!compiler.function.chunk.code.is_empty());
     }
 }
