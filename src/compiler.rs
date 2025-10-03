@@ -1385,15 +1385,12 @@ impl Compiler {
                 }
                 "values" => {
                     // values can take any number of arguments
-                    // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("values".to_string(), args.len());
-                    self.emit_constant(builtin_value)?;
-                    // Compile the arguments
+                    // Compile the arguments first
                     for arg in args {
                         self.compile_expr(arg)?;
                     }
-                    // Call the built-in function
-                    self.emit_bytes(OpCode::OP_CALL, args.len() as u8, 1);
+                    // Generate OP_RETURN_VALUES instruction with argument count
+                    self.emit_bytes(OpCode::OP_RETURN_VALUES, args.len() as u8, 1);
                     return Ok(());
                 }
                 _ => {

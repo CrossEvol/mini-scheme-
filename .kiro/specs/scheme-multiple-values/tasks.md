@@ -54,8 +54,8 @@
     - Report appropriate errors for invalid contexts
     - _Requirements: 4.1, 4.2, 4.4_
 
-- [ ] 4. Update built-in values function implementation
-  - [ ] 4.1 Modify values function to use OP_RETURN_VALUES
+- [x] 4. Update built-in values function implementation
+  - [x] 4.1 Modify values function to use OP_RETURN_VALUES
     - Change `builtin_values()` to generate `OP_RETURN_VALUES` instruction
     - Remove creation of `MultipleValues` composite type
     - Handle zero, one, and multiple argument cases

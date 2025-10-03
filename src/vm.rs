@@ -825,7 +825,22 @@ impl VM {
                     }
 
                     // Validate multiple values in context
-                    self.validate_value_context(value_count)?;
+                    // Special case: at top level, check if this is the final top-level expression
+                    if self.frame_count == 1 {
+                        // Check if the next instruction is OP_RETURN (indicating this is the final expression)
+                        let frame = &self.frames[self.frame_count - 1];
+                        let chunk = &frame.closure.function.chunk;
+                        let next_instruction = chunk.get_byte(frame.ip);
+
+                        if next_instruction == Some(OpCode::OP_RETURN as u8) {
+                            // This is the final top-level expression - allow multiple values
+                        } else {
+                            // This is a sub-expression - validate normally
+                            self.validate_value_context(value_count)?;
+                        }
+                    } else {
+                        self.validate_value_context(value_count)?;
+                    }
 
                     // Set return count metadata
                     self.last_return_count = Some(value_count);
@@ -840,9 +855,16 @@ impl VM {
                         if let Some(trace) = execution_trace {
                             self.complete_execution_trace(trace);
                         }
-                        // End of program - return the first value if any, or nil if none
-                        if value_count > 0 {
-                            return Ok(self.peek(value_count - 1)?.clone());
+                        // End of program - for multiple values at top level, display all values
+                        if value_count > 1 {
+                            // Display all values (Scheme REPL behavior)
+                            for i in 0..value_count {
+                                let value = self.peek(value_count - 1 - i)?;
+                                println!("{}", value);
+                            }
+                            return Ok(Value::Nil); // Return nil to avoid double printing
+                        } else if value_count == 1 {
+                            return Ok(self.peek(0)?.clone());
                         } else {
                             return Ok(Value::Nil);
                         }
@@ -1609,7 +1631,6 @@ impl VM {
             "equal-hash" => self.builtin_equal_hash(arg_count),
             "string=?" => self.builtin_string_eq_q(arg_count),
             "equal?" => self.builtin_equal_q(arg_count),
-            "values" => self.builtin_values(arg_count),
             "call-with-values" => self.builtin_call_with_values(arg_count),
             "destructure-values" => self.builtin_destructure_values(arg_count),
             "destructure-for-let-values" => self.builtin_destructure_for_let_values(arg_count),
@@ -2922,34 +2943,6 @@ impl VM {
         // Compare the strings
         let result = string_a == string_b;
         self.push(Value::Boolean(result))?;
-        Ok(())
-    }
-
-    /// Implement the values built-in function
-    fn builtin_values(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
-        // values can take any number of arguments
-        // Collect all arguments from the stack
-        let mut values = Vec::new();
-        for _ in 0..arg_count {
-            values.push(self.pop()?);
-        }
-
-        // Reverse to get correct order (last popped was first argument)
-        values.reverse();
-
-        if values.len() == 1 {
-            // Single value - just push it back (optimization)
-            self.push(values.into_iter().next().unwrap())?;
-        } else {
-            // TODO: This will be replaced with OP_RETURN_VALUES in task 4
-            // For now, just return the first value to avoid compilation errors
-            if !values.is_empty() {
-                self.push(values.into_iter().next().unwrap())?;
-            } else {
-                self.push(Value::Nil)?;
-            }
-        }
-
         Ok(())
     }
 
