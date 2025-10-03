@@ -68,8 +68,8 @@
     - Test values in different contexts
     - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 5. Implement call-with-values compilation
-  - [ ] 5.1 Add call-with-values compilation to compiler
+- [x] 5. Implement call-with-values compilation
+  - [x] 5.1 Add call-with-values compilation to compiler
     - Implement `compile_call_with_values()` method in `Compiler`
     - Compile producer and consumer expressions
     - Generate `OP_CALL_WITH_VALUES` instruction

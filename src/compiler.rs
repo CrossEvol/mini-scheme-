@@ -1995,20 +1995,21 @@ impl Compiler {
         call_with_values: &CallWithValuesExpr,
     ) -> Result<(), CompileError> {
         self.trace("Compiling call-with-values expression");
+        self.trace_compilation_phase(
+            CompilationPhase::InstructionGeneration,
+            &Expr::CallWithValues(Box::new(call_with_values.clone())),
+        );
 
-        // Compile call-with-values as a built-in function call
-        // This allows the VM to handle the multiple values coordination
-        
-        // Push the built-in function onto the stack
-        let builtin_value = crate::object::Value::builtin("call-with-values".to_string(), 2);
-        self.emit_constant(builtin_value)?;
-        
-        // Compile the producer and consumer as arguments
+        // Compile the producer expression (should be a lambda that takes no arguments)
         self.compile_expr(&call_with_values.producer)?;
+        
+        // Compile the consumer expression (should be a lambda that takes the produced values)
         self.compile_expr(&call_with_values.consumer)?;
         
-        // Call the built-in function
-        self.emit_bytes(OpCode::OP_CALL, 2, 1);
+        // Generate OP_CALL_WITH_VALUES instruction
+        // The VM will handle popping consumer and producer from stack,
+        // calling producer, then calling consumer with producer's results
+        self.emit_byte(OpCode::OP_CALL_WITH_VALUES, 1);
 
         Ok(())
     }
@@ -2653,5 +2654,50 @@ mod tests {
         let len = code.len();
         assert_eq!(code[len - 2], OpCode::OP_CLOSE_UPVALUE.to_byte()); // For captured local
         assert_eq!(code[len - 1], OpCode::OP_POP.to_byte()); // For regular local
+    }
+
+    #[test]
+    fn test_compile_call_with_values() {
+        use crate::ast::{CallWithValuesExpr, LambdaExpr};
+
+        let mut compiler = Compiler::new_script();
+
+        // Create a call-with-values expression:
+        // (call-with-values (lambda () (values 1 2)) (lambda (x y) (+ x y)))
+        let producer = Expr::Lambda(Box::new(LambdaExpr {
+            params: vec![],
+            body: vec![Expr::Call(
+                Box::new(Expr::Variable("values".to_string())),
+                vec![Expr::Number(1.0), Expr::Number(2.0)],
+            )],
+        }));
+
+        let consumer = Expr::Lambda(Box::new(LambdaExpr {
+            params: vec!["x".to_string(), "y".to_string()],
+            body: vec![Expr::Call(
+                Box::new(Expr::Variable("+".to_string())),
+                vec![Expr::Variable("x".to_string()), Expr::Variable("y".to_string())],
+            )],
+        }));
+
+        let call_with_values = CallWithValuesExpr { producer, consumer };
+
+        compiler.compile_call_with_values(&call_with_values).unwrap();
+
+        let code = &compiler.function.chunk.code;
+        
+        // The last instruction should be OP_CALL_WITH_VALUES
+        let last_instruction = code[code.len() - 1];
+        assert_eq!(last_instruction, OpCode::OP_CALL_WITH_VALUES.to_byte());
+
+        // Should have compiled both producer and consumer lambdas
+        // This means we should have at least 2 OP_CLOSURE instructions before OP_CALL_WITH_VALUES
+        let mut closure_count = 0;
+        for &byte in code {
+            if byte == OpCode::OP_CLOSURE.to_byte() {
+                closure_count += 1;
+            }
+        }
+        assert_eq!(closure_count, 2, "Should have compiled producer and consumer lambdas");
     }
 }
