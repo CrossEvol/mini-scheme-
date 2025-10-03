@@ -885,75 +885,142 @@ impl Compiler {
                     return Ok(());
                 }
                 "+" => {
-                    if args.len() != 2 {
-                        return Err(CompileError::ArityMismatch {
-                            expected: 2,
-                            got: args.len(),
-                        });
+                    // + can take 0 or more arguments
+                    match args.len() {
+                        0 => {
+                            // (+ ) => 0
+                            self.emit_constant(Value::Number(0.0))?;
+                        }
+                        1 => {
+                            // (+ x) => x
+                            self.compile_expr(&args[0])?;
+                        }
+                        _ => {
+                            // (+ x y z ...) => ((x + y) + z) + ...
+                            self.compile_expr(&args[0])?;
+                            for arg in &args[1..] {
+                                self.compile_expr(arg)?;
+                                self.emit_byte(OpCode::OP_ADD, 1);
+                            }
+                        }
                     }
-                    self.compile_expr(&args[0])?;
-                    self.compile_expr(&args[1])?;
-                    self.emit_byte(OpCode::OP_ADD, 1);
                     return Ok(());
                 }
                 "-" => {
-                    if args.len() != 2 {
+                    // - requires at least 1 argument
+                    if args.is_empty() {
                         return Err(CompileError::ArityMismatch {
-                            expected: 2,
-                            got: args.len(),
+                            expected: 1,
+                            got: 0,
                         });
                     }
-                    self.compile_expr(&args[0])?;
-                    self.compile_expr(&args[1])?;
-                    self.emit_byte(OpCode::OP_SUBTRACT, 1);
+                    
+                    match args.len() {
+                        1 => {
+                            // (- x) => -x (negate)
+                            self.compile_expr(&args[0])?;
+                            self.emit_byte(OpCode::OP_NEGATE, 1);
+                        }
+                        _ => {
+                            // (- x y z ...) => ((x - y) - z) - ...
+                            self.compile_expr(&args[0])?;
+                            for arg in &args[1..] {
+                                self.compile_expr(arg)?;
+                                self.emit_byte(OpCode::OP_SUBTRACT, 1);
+                            }
+                        }
+                    }
                     return Ok(());
                 }
                 "*" => {
-                    if args.len() != 2 {
-                        return Err(CompileError::ArityMismatch {
-                            expected: 2,
-                            got: args.len(),
-                        });
+                    // * can take 0 or more arguments
+                    match args.len() {
+                        0 => {
+                            // (* ) => 1
+                            self.emit_constant(Value::Number(1.0))?;
+                        }
+                        1 => {
+                            // (* x) => x
+                            self.compile_expr(&args[0])?;
+                        }
+                        _ => {
+                            // (* x y z ...) => ((x * y) * z) * ...
+                            self.compile_expr(&args[0])?;
+                            for arg in &args[1..] {
+                                self.compile_expr(arg)?;
+                                self.emit_byte(OpCode::OP_MULTIPLY, 1);
+                            }
+                        }
                     }
-                    self.compile_expr(&args[0])?;
-                    self.compile_expr(&args[1])?;
-                    self.emit_byte(OpCode::OP_MULTIPLY, 1);
                     return Ok(());
                 }
                 "/" => {
-                    if args.len() != 2 {
+                    // / requires at least 1 argument
+                    if args.is_empty() {
                         return Err(CompileError::ArityMismatch {
-                            expected: 2,
-                            got: args.len(),
+                            expected: 1,
+                            got: 0,
                         });
                     }
-                    self.compile_expr(&args[0])?;
-                    self.compile_expr(&args[1])?;
-                    self.emit_byte(OpCode::OP_DIVIDE, 1);
+                    
+                    match args.len() {
+                        1 => {
+                            // (/ x) => 1/x (reciprocal)
+                            self.emit_constant(Value::Number(1.0))?;
+                            self.compile_expr(&args[0])?;
+                            self.emit_byte(OpCode::OP_DIVIDE, 1);
+                        }
+                        _ => {
+                            // (/ x y z ...) => ((x / y) / z) / ...
+                            self.compile_expr(&args[0])?;
+                            for arg in &args[1..] {
+                                self.compile_expr(arg)?;
+                                self.emit_byte(OpCode::OP_DIVIDE, 1);
+                            }
+                        }
+                    }
                     return Ok(());
                 }
                 "<" => {
-                    if args.len() != 2 {
+                    // < requires at least 2 arguments
+                    if args.len() < 2 {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
                         });
                     }
-                    self.compile_expr(&args[0])?;
-                    self.compile_expr(&args[1])?;
-                    self.emit_byte(OpCode::OP_LESS, 1);
+                    
+                    if args.len() == 2 {
+                        // (< x y) => x < y
+                        self.compile_expr(&args[0])?;
+                        self.compile_expr(&args[1])?;
+                        self.emit_byte(OpCode::OP_LESS, 1);
+                    } else {
+                        // (< x y z ...) => (and (< x y) (< y z) ...)
+                        // We need to implement this as a chain of comparisons
+                        // For now, let's compile it as nested AND operations
+                        self.compile_chained_comparison(&args, OpCode::OP_LESS)?;
+                    }
                     return Ok(());
                 }
                 ">" => {
-                    if args.len() != 2 {
+                    // > requires at least 2 arguments
+                    if args.len() < 2 {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
                         });
                     }
-                    self.compile_expr(&args[0])?;
-                    self.compile_expr(&args[1])?;
-                    self.emit_byte(OpCode::OP_GREATER, 1);
+                    
+                    if args.len() == 2 {
+                        // (> x y) => x > y
+                        self.compile_expr(&args[0])?;
+                        self.compile_expr(&args[1])?;
+                        self.emit_byte(OpCode::OP_GREATER, 1);
+                    } else {
+                        // (> x y z ...) => (and (> x y) (> y z) ...)
+                        self.compile_chained_comparison(&args, OpCode::OP_GREATER)?;
+                    }
                     return Ok(());
                 }
                 "null?" => {
@@ -1414,6 +1481,66 @@ impl Compiler {
         }
 
         self.emit_bytes(OpCode::OP_CALL, args.len() as u8, 1);
+        Ok(())
+    }
+
+    /// Compile a chained comparison operation (e.g., (< x y z) => (and (< x y) (< y z)))
+    fn compile_chained_comparison(&mut self, args: &[Expr], op: OpCode) -> Result<(), CompileError> {
+        if args.len() < 2 {
+            return Err(CompileError::ArityMismatch {
+                expected: 2,
+                got: args.len(),
+            });
+        }
+
+        // For chained comparisons like (< a b c d), we need to generate:
+        // (and (< a b) (< b c) (< c d))
+        // 
+        // We'll compile this as:
+        // 1. Evaluate first comparison
+        // 2. If false, short-circuit to false
+        // 3. Otherwise, continue with next comparison
+        // 4. Repeat until all comparisons are done
+
+        let mut jump_to_false_positions = Vec::new();
+
+        // Compile each adjacent pair comparison
+        for i in 0..args.len() - 1 {
+            // Compile the comparison: args[i] op args[i+1]
+            self.compile_expr(&args[i])?;
+            self.compile_expr(&args[i + 1])?;
+            self.emit_byte(op, 1);
+
+            // If this is not the last comparison, we need to check the result
+            if i < args.len() - 2 {
+                // Duplicate the result for the next iteration
+                // (we need to keep one copy for the final result)
+                // For now, we'll use a simpler approach that re-evaluates
+                
+                // Jump to false if this comparison failed
+                let jump_pos = self.function.chunk.count();
+                self.emit_short(OpCode::OP_JUMP_IF_FALSE, 0, 1);
+                jump_to_false_positions.push(jump_pos);
+                
+                // Pop the true result since we're continuing
+                self.emit_byte(OpCode::OP_POP, 1);
+            }
+        }
+
+        // If we get here, all comparisons were true
+        // The last comparison result is still on the stack
+        
+        // Patch all the false jumps to jump to the end
+        let end_pos = self.function.chunk.count();
+        for jump_pos in jump_to_false_positions {
+            let jump_distance = end_pos - jump_pos - 3;
+            if jump_distance > u16::MAX as usize {
+                return Err(CompileError::JumpTooLarge);
+            }
+            self.function.chunk.code[jump_pos + 1] = (jump_distance >> 8) as u8;
+            self.function.chunk.code[jump_pos + 2] = jump_distance as u8;
+        }
+
         Ok(())
     }
 
