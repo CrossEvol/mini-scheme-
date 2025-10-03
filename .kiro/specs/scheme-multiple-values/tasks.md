@@ -82,7 +82,7 @@
     - _Requirements: 3.2, 5.1, 5.2, 5.3_
 
 - [ ] 6. Implement let-values to call-with-values transformation
-  - [ ] 6.1 Add let-values compilation transformation
+  - [x] 6.1 Add let-values compilation transformation
     - Implement `compile_let_values()` method in `Compiler`
     - Transform let-values bindings to producer/consumer lambdas
     - Compile transformed call-with-values expression

@@ -1958,64 +1958,59 @@ impl Compiler {
 
     // Additional AST node compilation methods
 
-    /// Compile a let-values expression
+    /// Compile a let-values expression by transforming to call-with-values
     fn compile_let_values(&mut self, let_values: &LetValuesExpr) -> Result<(), CompileError> {
         self.trace("Compiling let-values expression");
+        self.trace_compilation_phase(
+            CompilationPhase::InstructionGeneration,
+            &Expr::LetValues(Box::new(let_values.clone())),
+        );
 
-        self.begin_scope();
-
-        // For now, implement a simplified version that works for the basic test case
-        // (let-values (((x y) (values 1 2))) (+ x y))
-
-        // This is not a general implementation, but it will work for the test
-        for (vars, expr) in &let_values.bindings {
-            if vars.len() == 1 {
-                // Single variable - simple case, same as regular let
-                self.compile_expr(expr)?;
-                self.declare_local(vars[0].clone())?;
-                self.define_local();
-            } else if vars.len() == 2 {
-                // Two variables case - for now, hardcode for the test case
-                // This is a simplified implementation that works for (values 1 2)
-
-                // Evaluate the expression (should be (values 1 2))
-                self.compile_expr(expr)?;
-                self.emit_byte(OpCode::OP_POP, 1); // TODO: This will be replaced with proper multiple values handling
-
-                // Debug: trace what variables we're binding
-                self.trace(&format!("Binding variables: {} and {}", vars[0], vars[1]));
-
-                // Hardcode the bindings for the test case
-                // Bind first variable to 1
-                self.emit_constant(crate::object::Value::Number(1.0))?;
-                self.declare_local(vars[0].clone())?;
-                self.trace(&format!("Declared local {}, defining...", vars[0]));
-                self.define_local();
-
-                // Bind second variable to 2
-                self.emit_constant(crate::object::Value::Number(2.0))?;
-                self.declare_local(vars[1].clone())?;
-                self.trace(&format!("Declared local {}, defining...", vars[1]));
-                self.define_local();
-            } else {
-                // General case - not implemented yet
-                return Err(CompileError::NotImplemented(
-                    "General let-values with arbitrary variable patterns".to_string(),
-                ));
-            }
+        // Transform let-values to call-with-values
+        // (let-values (((vars...) producer-expr)) body...)
+        // becomes:
+        // (call-with-values (lambda () producer-expr) (lambda (vars...) body...))
+        
+        // Handle multiple bindings by nesting transformations
+        if let_values.bindings.is_empty() {
+            // No bindings, just compile the body in a begin block
+            return self.compile_begin(&let_values.body);
         }
 
-        // Compile body
-        for (i, expr) in let_values.body.iter().enumerate() {
-            self.compile_expr(expr)?;
-            // Pop intermediate results except for the last expression
-            if i < let_values.body.len() - 1 {
-                self.emit_byte(OpCode::OP_POP, 1);
-            }
+        // Transform multiple bindings by nesting call-with-values expressions
+        // Process bindings from first to last, creating nested structure
+        let mut result_expr = if let_values.body.len() == 1 {
+            let_values.body[0].clone()
+        } else {
+            Expr::Begin(let_values.body.clone())
+        };
+        
+        // Process bindings in reverse order to create proper nesting
+        for (vars, producer_expr) in let_values.bindings.iter().rev() {
+            // Create producer lambda: (lambda () producer-expr)
+            let producer = LambdaExpr {
+                params: vec![],
+                body: vec![producer_expr.clone()],
+            };
+            
+            // Create consumer lambda: (lambda (vars...) result_expr)
+            let consumer = LambdaExpr {
+                params: vars.clone(),
+                body: vec![result_expr.clone()],
+            };
+            
+            // Create call-with-values expression
+            let call_with_values = CallWithValuesExpr {
+                producer: Expr::Lambda(Box::new(producer)),
+                consumer: Expr::Lambda(Box::new(consumer)),
+            };
+            
+            // Update result_expr to be this call-with-values for the next iteration
+            result_expr = Expr::CallWithValues(Box::new(call_with_values));
         }
-
-        self.end_scope();
-        Ok(())
+        
+        // Compile the final transformed expression
+        self.compile_expr(&result_expr)
     }
 
     /// Compile a set! expression
