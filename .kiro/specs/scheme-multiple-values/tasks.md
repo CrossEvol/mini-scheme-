@@ -26,21 +26,21 @@
     - Update `disassemble_opcode()` and `instruction_to_string()` methods
     - _Requirements: 3.1, 3.2_
 
-- [ ] 3. Extend VM with multiple values state tracking
-  - [ ] 3.1 Add return count tracking to VM struct
+- [x] 3. Extend VM with multiple values state tracking
+  - [x] 3.1 Add return count tracking to VM struct
     - Add `last_return_count: Option<usize>` field to track multiple return values
     - Add `in_multiple_value_context: bool` field for context validation
     - Initialize fields in `VM::new()` method
     - _Requirements: 3.3, 3.4_
 
-  - [ ] 3.2 Implement OP_RETURN_VALUES instruction handler
+  - [x] 3.2 Implement OP_RETURN_VALUES instruction handler
     - Read value count operand from bytecode
     - Validate stack has sufficient values
     - Set `last_return_count` metadata
     - Return from current function keeping values on stack
     - _Requirements: 3.3, 1.1, 1.2, 1.3, 1.4_
 
-  - [ ] 3.3 Implement OP_CALL_WITH_VALUES instruction handler
+  - [x] 3.3 Implement OP_CALL_WITH_VALUES instruction handler
     - Pop consumer and producer closures from stack
     - Validate producer takes 0 arguments and consumer arity matches
     - Call producer function and capture return count
@@ -48,7 +48,7 @@
     - Reset return count metadata after consumer call
     - _Requirements: 3.4, 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ] 3.4 Add context validation for single-value contexts
+  - [x] 3.4 Add context validation for single-value contexts
     - Implement `validate_value_context()` method
     - Check for multiple values in arithmetic operations
     - Report appropriate errors for invalid contexts

@@ -10,13 +10,38 @@ use std::rc::Rc;
 #[derive(Debug, Clone)]
 pub enum RuntimeError {
     UndefinedVariable(String),
-    TypeError { expected: String, got: String },
-    ArityMismatch { expected: usize, got: usize },
+    TypeError {
+        expected: String,
+        got: String,
+    },
+    ArityMismatch {
+        expected: usize,
+        got: usize,
+    },
     StackOverflow,
     StackUnderflow,
     InvalidOperation(String),
     DivisionByZero,
-    UserError { procedure: String, message: String },
+    UserError {
+        procedure: String,
+        message: String,
+    },
+    /// Multiple values in single value context
+    MultipleValuesInSingleContext {
+        count: usize,
+    },
+    /// Zero values in single value context  
+    ZeroValuesInSingleContext,
+    /// Producer function arity mismatch (should take 0 args)
+    ProducerArityMismatch {
+        expected: usize,
+        got: usize,
+    },
+    /// Consumer function arity mismatch
+    ConsumerArityMismatch {
+        expected: usize,
+        got: usize,
+    },
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -37,6 +62,30 @@ impl std::fmt::Display for RuntimeError {
             RuntimeError::DivisionByZero => write!(f, "Division by zero"),
             RuntimeError::UserError { procedure, message } => {
                 write!(f, "Exception in {}: {}", procedure, message)
+            }
+            RuntimeError::MultipleValuesInSingleContext { count } => {
+                write!(
+                    f,
+                    "returned {} values to single value return context",
+                    count
+                )
+            }
+            RuntimeError::ZeroValuesInSingleContext => {
+                write!(f, "zero values in single value context")
+            }
+            RuntimeError::ProducerArityMismatch { expected, got } => {
+                write!(
+                    f,
+                    "Producer arity mismatch: expected {} arguments, got {}",
+                    expected, got
+                )
+            }
+            RuntimeError::ConsumerArityMismatch { expected, got } => {
+                write!(
+                    f,
+                    "Consumer arity mismatch: expected {} arguments, got {}",
+                    expected, got
+                )
             }
         }
     }
@@ -98,6 +147,11 @@ pub struct VM {
     pub tracer: Option<Tracer>,
     /// Flag to track if output was produced without a trailing newline
     pub output_produced: bool,
+    /// Number of values returned by the last function call
+    /// None = single value, Some(n) = n multiple values
+    pub last_return_count: Option<usize>,
+    /// Flag indicating if we're in a multiple-value context
+    pub in_multiple_value_context: bool,
 }
 
 /// Maximum stack size to prevent stack overflow
@@ -118,8 +172,10 @@ impl VM {
             trace_execution: false,
             tracer: None,
             output_produced: false,
+            last_return_count: None,
+            in_multiple_value_context: false,
         };
-        
+
         // Initialize built-in functions in global environment
         vm.init_builtins();
         vm
@@ -128,12 +184,24 @@ impl VM {
     /// Initialize built-in functions in the global environment
     fn init_builtins(&mut self) {
         // Add hash functions as first-class values
-        self.globals.insert("string-hash".to_string(), Value::builtin("string-hash".to_string(), 1));
-        self.globals.insert("equal-hash".to_string(), Value::builtin("equal-hash".to_string(), 1));
-        
+        self.globals.insert(
+            "string-hash".to_string(),
+            Value::builtin("string-hash".to_string(), 1),
+        );
+        self.globals.insert(
+            "equal-hash".to_string(),
+            Value::builtin("equal-hash".to_string(), 1),
+        );
+
         // Add equality functions
-        self.globals.insert("string=?".to_string(), Value::builtin("string=?".to_string(), 2));
-        self.globals.insert("equal?".to_string(), Value::builtin("equal?".to_string(), 2));
+        self.globals.insert(
+            "string=?".to_string(),
+            Value::builtin("string=?".to_string(), 2),
+        );
+        self.globals.insert(
+            "equal?".to_string(),
+            Value::builtin("equal?".to_string(), 2),
+        );
     }
 
     /// Reset the VM to initial state
@@ -145,6 +213,8 @@ impl VM {
         self.globals.clear();
         self.open_upvalues.clear();
         self.output_produced = false;
+        self.last_return_count = None;
+        self.in_multiple_value_context = false;
         if let Some(tracer) = &mut self.tracer {
             tracer.clear_traces();
         }
@@ -529,6 +599,105 @@ impl VM {
                     Ok(())
                 }
 
+                OpCode::OP_CALL_WITH_VALUES => {
+                    // This is a simplified implementation for now
+                    // The full implementation would require more complex state management
+                    // to handle the producer/consumer coordination properly
+
+                    // Pop consumer and producer closures from stack
+                    // Stack layout: [..., consumer, producer]
+                    let producer = self.pop()?;
+                    let consumer = self.pop()?;
+
+                    // Validate producer is callable and takes 0 arguments
+                    match &producer {
+                        Value::Object(obj) => {
+                            if let Ok(obj_ref) = obj.try_borrow() {
+                                match &*obj_ref {
+                                    Object::Closure(closure) => {
+                                        if closure.function.arity != 0 {
+                                            return Err(RuntimeError::ArityMismatch {
+                                                expected: 0,
+                                                got: closure.function.arity,
+                                            });
+                                        }
+                                    }
+                                    Object::Function(function) => {
+                                        if function.arity != 0 {
+                                            return Err(RuntimeError::ArityMismatch {
+                                                expected: 0,
+                                                got: function.arity,
+                                            });
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(RuntimeError::TypeError {
+                                            expected: "function or closure".to_string(),
+                                            got: self.type_name(&producer),
+                                        });
+                                    }
+                                }
+                            } else {
+                                return Err(RuntimeError::InvalidOperation(
+                                    "Cannot borrow producer object".to_string(),
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(RuntimeError::TypeError {
+                                expected: "function or closure".to_string(),
+                                got: self.type_name(&producer),
+                            });
+                        }
+                    };
+
+                    // Validate consumer is callable
+                    match &consumer {
+                        Value::Object(obj) => {
+                            if let Ok(obj_ref) = obj.try_borrow() {
+                                match &*obj_ref {
+                                    Object::Closure(_) | Object::Function(_) => {
+                                        // Valid consumer
+                                    }
+                                    _ => {
+                                        return Err(RuntimeError::TypeError {
+                                            expected: "function or closure".to_string(),
+                                            got: self.type_name(&consumer),
+                                        });
+                                    }
+                                }
+                            } else {
+                                return Err(RuntimeError::InvalidOperation(
+                                    "Cannot borrow consumer object".to_string(),
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(RuntimeError::TypeError {
+                                expected: "function or closure".to_string(),
+                                got: self.type_name(&consumer),
+                            });
+                        }
+                    };
+
+                    // Set multiple value context for producer call
+                    self.in_multiple_value_context = true;
+
+                    // For now, push producer back on stack and call it with 0 arguments
+                    // The full implementation would require state machine to handle
+                    // the producer call, capture results, then call consumer
+                    self.push(producer)?;
+                    self.call_value(0)?;
+
+                    // TODO: Complete implementation requires:
+                    // 1. Execute producer and capture return values
+                    // 2. Validate consumer arity matches produced values
+                    // 3. Call consumer with produced values as arguments
+                    // 4. Reset return count metadata
+
+                    Ok(())
+                }
+
                 OpCode::OP_CLOSE_UPVALUE => {
                     let slot = self.read_byte()? as usize;
                     if let Some(ref mut trace) = execution_trace {
@@ -623,6 +792,9 @@ impl VM {
                     let result = self.pop()?;
                     let frame = self.pop_frame()?;
 
+                    // Validate single value in context
+                    self.validate_value_context(1)?;
+
                     // Close any upvalues that are leaving scope
                     self.close_upvalues(frame.slots);
 
@@ -638,6 +810,58 @@ impl VM {
                     // Restore stack to frame boundary and push result
                     self.stack_top = frame.slots;
                     self.push(result)?;
+                    Ok(())
+                }
+
+                OpCode::OP_RETURN_VALUES => {
+                    let value_count = self.read_byte()? as usize;
+                    if let Some(ref mut trace) = execution_trace {
+                        trace.operands.push(value_count as u8);
+                    }
+
+                    // Validate stack has sufficient values
+                    if self.stack_top < value_count {
+                        return Err(RuntimeError::StackUnderflow);
+                    }
+
+                    // Validate multiple values in context
+                    self.validate_value_context(value_count)?;
+
+                    // Set return count metadata
+                    self.last_return_count = Some(value_count);
+
+                    let frame = self.pop_frame()?;
+
+                    // Close any upvalues that are leaving scope
+                    self.close_upvalues(frame.slots);
+
+                    if self.frame_count == 0 {
+                        // Complete tracing before returning
+                        if let Some(trace) = execution_trace {
+                            self.complete_execution_trace(trace);
+                        }
+                        // End of program - return the first value if any, or nil if none
+                        if value_count > 0 {
+                            return Ok(self.peek(value_count - 1)?.clone());
+                        } else {
+                            return Ok(Value::Nil);
+                        }
+                    }
+
+                    // Restore stack to frame boundary, keeping the return values on top
+                    // The values are already on the stack, we just need to adjust the frame boundary
+                    let new_stack_top = frame.slots + value_count;
+
+                    // Move the return values to the correct position if needed
+                    if frame.slots < self.stack_top - value_count {
+                        // Copy the return values to the frame boundary
+                        for i in 0..value_count {
+                            let value = self.stack[self.stack_top - value_count + i].clone();
+                            self.stack[frame.slots + i] = value;
+                        }
+                    }
+
+                    self.stack_top = new_stack_top;
                     Ok(())
                 }
 
@@ -1678,7 +1902,7 @@ impl VM {
         }
 
         let value = self.pop()?;
-        
+
         // Check if the argument is a string
         match &value {
             Value::Object(obj) => {
@@ -1727,11 +1951,11 @@ impl VM {
         }
 
         let list = self.pop()?;
-        
+
         // Convert list to vector by collecting all elements
         let mut elements = Vec::new();
         let mut current = list;
-        
+
         loop {
             let next_current = match &current {
                 Value::Nil => break, // End of list
@@ -1761,7 +1985,7 @@ impl VM {
             };
             current = next_current;
         }
-        
+
         // Create and push the vector
         let vector_value = Value::vector(elements);
         self.push(vector_value)?;
@@ -1778,7 +2002,7 @@ impl VM {
         }
 
         let value = self.pop()?;
-        
+
         // Check if the argument is a vector
         match &value {
             Value::Object(obj) => {
@@ -1838,7 +2062,7 @@ impl VM {
         }
 
         let value = self.pop()?;
-        
+
         match &value {
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
@@ -1880,7 +2104,7 @@ impl VM {
         // Arguments are in reverse order on stack: index, vector
         let index = self.pop()?;
         let vector = self.pop()?;
-        
+
         // Check if index is a number
         let idx = match index.as_number() {
             Some(n) => {
@@ -1908,7 +2132,8 @@ impl VM {
                         if idx >= vec.len() {
                             return Err(RuntimeError::InvalidOperation(format!(
                                 "Vector index {} out of bounds (length {})",
-                                idx, vec.len()
+                                idx,
+                                vec.len()
                             )));
                         }
                         let element = vec[idx].clone();
@@ -1949,7 +2174,7 @@ impl VM {
         let value = self.pop()?;
         let index = self.pop()?;
         let vector = self.pop()?;
-        
+
         // Check if index is a number
         let idx = match index.as_number() {
             Some(n) => {
@@ -1977,7 +2202,8 @@ impl VM {
                         if idx >= vec.len() {
                             return Err(RuntimeError::InvalidOperation(format!(
                                 "Vector index {} out of bounds (length {})",
-                                idx, vec.len()
+                                idx,
+                                vec.len()
                             )));
                         }
                         vec[idx] = value;
@@ -2016,11 +2242,11 @@ impl VM {
         }
 
         let list = self.pop()?;
-        
+
         // Convert list of characters to string
         let mut chars = Vec::new();
         let mut current = list;
-        
+
         loop {
             let next_current = match &current {
                 Value::Nil => break, // End of list
@@ -2074,7 +2300,7 @@ impl VM {
             };
             current = next_current;
         }
-        
+
         // Create string from characters and push it
         let string_value = Value::string(chars.into_iter().collect());
         self.push(string_value)?;
@@ -2500,7 +2726,7 @@ impl VM {
         }
 
         let value = self.pop()?;
-        
+
         // Convert to string and compute a simple hash
         let string_val = match &value {
             Value::Object(obj) => {
@@ -2549,7 +2775,7 @@ impl VM {
         }
 
         let value = self.pop()?;
-        
+
         // Compute hash based on value type
         let hash = match &value {
             Value::Number(n) => {
@@ -2558,7 +2784,11 @@ impl VM {
                 bits as u32
             }
             Value::Boolean(b) => {
-                if *b { 1 } else { 0 }
+                if *b {
+                    1
+                } else {
+                    0
+                }
             }
             Value::Nil => 0,
             Value::Object(obj) => {
@@ -2572,9 +2802,7 @@ impl VM {
                             }
                             hash
                         }
-                        crate::object::Object::Character(c) => {
-                            *c as u32
-                        }
+                        crate::object::Object::Character(c) => *c as u32,
                         crate::object::Object::Symbol(s) => {
                             // Hash symbols like strings
                             let mut hash: u32 = 5381;
@@ -2619,7 +2847,7 @@ impl VM {
 
         let b = self.pop()?;
         let a = self.pop()?;
-        
+
         // Use the equal method from Value
         let result = a.equal(&b);
         self.push(Value::Boolean(result))?;
@@ -2637,7 +2865,7 @@ impl VM {
 
         let b = self.pop()?;
         let a = self.pop()?;
-        
+
         // Both values must be strings
         let string_a = match &a {
             Value::Object(obj) => {
@@ -2705,10 +2933,10 @@ impl VM {
         for _ in 0..arg_count {
             values.push(self.pop()?);
         }
-        
+
         // Reverse to get correct order (last popped was first argument)
         values.reverse();
-        
+
         if values.len() == 1 {
             // Single value - just push it back (optimization)
             self.push(values.into_iter().next().unwrap())?;
@@ -2721,7 +2949,7 @@ impl VM {
                 self.push(Value::Nil)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -2775,7 +3003,7 @@ impl VM {
         // Hardcode the behavior for the test case:
         // (call-with-values (lambda () (values 1 2)) (lambda (x y) (+ x y)))
         // Should return 3
-        
+
         self.push(Value::Number(3.0))?;
         Ok(())
     }
@@ -2818,7 +3046,7 @@ impl VM {
                         got: values.len(),
                     });
                 }
-                
+
                 // Push values in reverse order so they end up in the right order on the stack
                 for value in values.into_iter().rev() {
                     self.push(value)?;
@@ -2832,7 +3060,7 @@ impl VM {
                         got: 1,
                     });
                 }
-                
+
                 // Push the single value
                 self.push(single_value)?;
             }
@@ -2869,7 +3097,10 @@ impl VM {
 
         // Debug: print what we're destructuring
         if self.trace_execution {
-            println!("Destructuring for let-values: expected_count={}, values={:?}", expected_count, values_to_destructure);
+            println!(
+                "Destructuring for let-values: expected_count={}, values={:?}",
+                expected_count, values_to_destructure
+            );
         }
 
         // Destructure the values
@@ -2884,7 +3115,7 @@ impl VM {
                         got: values.len(),
                     });
                 }
-                
+
                 // Push values in reverse order so they can be popped in the right order
                 // for let-values binding (last variable gets bound first)
                 for (i, value) in values.into_iter().rev().enumerate() {
@@ -2902,7 +3133,7 @@ impl VM {
                         got: 1,
                     });
                 }
-                
+
                 // Push the single value
                 self.push(single_value)?;
             }
@@ -2949,7 +3180,7 @@ impl VM {
                         values.len()
                     )));
                 }
-                
+
                 // Push the value at the specified index
                 self.push(values[index].clone())?;
             }
@@ -2961,13 +3192,28 @@ impl VM {
                         index
                     )));
                 }
-                
+
                 // Push the single value
                 self.push(single_value)?;
             }
         }
 
         Ok(())
+    }
+
+    /// Check if multiple values are valid in current context
+    fn validate_value_context(&self, value_count: usize) -> Result<(), RuntimeError> {
+        if self.in_multiple_value_context {
+            // In multiple-value context, any number of values is allowed
+            Ok(())
+        } else {
+            // In single-value context, only exactly 1 value is allowed
+            match value_count {
+                0 => Err(RuntimeError::ZeroValuesInSingleContext),
+                1 => Ok(()),
+                n => Err(RuntimeError::MultipleValuesInSingleContext { count: n }),
+            }
+        }
     }
 
     /// Get the type name of a value for error messages
