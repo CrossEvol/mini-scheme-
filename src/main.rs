@@ -455,15 +455,15 @@ fn process_input_with_repl_vm_result(
     let function = if trace_config.compilation {
         let tracer = Tracer::new(trace_config.clone());
         Compiler::compile_ast_with_trace(&ast, tracer).map_err(|err| {
-            let context = ErrorContext::new(None, 1, 1)
-                .with_context("compiling AST to bytecode".to_string());
+            let context =
+                ErrorContext::new(None, 1, 1).with_context("compiling AST to bytecode".to_string());
             error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
             err
         })?
     } else {
         Compiler::compile_ast(&ast).map_err(|err| {
-            let context = ErrorContext::new(None, 1, 1)
-                .with_context("compiling AST to bytecode".to_string());
+            let context =
+                ErrorContext::new(None, 1, 1).with_context("compiling AST to bytecode".to_string());
             error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
             err
         })?
@@ -490,14 +490,20 @@ fn process_input_with_repl_vm_result(
 
         vm.interpret(&function.chunk)
             .map_err(|err| {
-                let context = ErrorContext::new(None, 1, 1)
-                    .with_context("executing bytecode".to_string());
+                let context =
+                    ErrorContext::new(None, 1, 1).with_context("executing bytecode".to_string());
                 error_reporter.report_error(&MiniSchemeError::from(err.clone()), Some(&context));
                 err
             })
             .map(|result| {
                 // Don't print nil values (used for statements that produce no output)
-                if !result.is_nil() {
+                if result.is_multiple_values() {
+                    // Display all values from buffer (Scheme REPL behavior)
+                    for value in vm.get_multiple_values() {
+                        println!("{}", value);
+                    }
+                    vm.clear_multiple_values_buffer();
+                } else if !result.is_nil() {
                     // Only show "Result:" prefix when debugging modes are enabled
                     if show_tokens || show_ast || show_bytecode {
                         println!("Result: {}", result);
@@ -516,7 +522,7 @@ fn repl_with_config(mut trace_config: TraceConfig) {
     let mut show_ast = false;
     let mut show_bytecode = false;
     let mut execute = true;
-    
+
     // Create a single VM instance for the entire REPL session
     let mut vm = VM::new();
 
@@ -642,7 +648,7 @@ fn repl_with_config(mut trace_config: TraceConfig) {
                     _ => {
                         // Reset the output flag before processing
                         vm.reset_output_flag();
-                        
+
                         process_input_with_repl_vm(
                             input,
                             &mut vm,
@@ -652,9 +658,14 @@ fn repl_with_config(mut trace_config: TraceConfig) {
                             show_bytecode,
                             execute,
                         );
-                        
+
                         // Add a newline if output was produced without one
-                        if execute && !show_tokens && !show_ast && !show_bytecode && vm.output_was_produced() {
+                        if execute
+                            && !show_tokens
+                            && !show_ast
+                            && !show_bytecode
+                            && vm.output_was_produced()
+                        {
                             println!();
                         }
                     }

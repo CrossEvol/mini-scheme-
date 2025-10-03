@@ -616,8 +616,8 @@ impl VM {
 
                     // Pop consumer and producer closures from stack
                     // Stack layout: [..., consumer, producer]
-                    let producer = self.pop()?;
                     let consumer = self.pop()?;
+                    let producer = self.pop()?;
 
                     // Validate producer is callable and takes 0 arguments
                     match &producer {
