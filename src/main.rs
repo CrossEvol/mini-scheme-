@@ -338,8 +338,15 @@ fn process_input_with_config_result(
                 err
             })
             .map(|result| {
-                // Don't print nil values (used for statements that produce no output)
-                if !result.is_nil() {
+                // Handle multiple values case
+                if result.is_multiple_values() {
+                    // Display all values from buffer (Scheme REPL behavior)
+                    for value in vm.get_multiple_values() {
+                        println!("{}", value);
+                    }
+                    vm.clear_multiple_values_buffer();
+                } else if !result.is_nil() {
+                    // Don't print nil values (used for statements that produce no output)
                     // Only show "Result:" prefix when debugging modes are enabled
                     if show_tokens || show_ast || show_bytecode {
                         println!("Result: {}", result);

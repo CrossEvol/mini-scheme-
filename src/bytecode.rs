@@ -579,6 +579,7 @@ impl Disassembler {
             Value::Number(n) => print!("{}", n),
             Value::Boolean(b) => print!("{}", if *b { "#t" } else { "#f" }),
             Value::Nil => print!("nil"),
+            Value::MultipleValues => print!("#<multiple-values>"),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -663,6 +664,7 @@ impl Disassembler {
                 }
             }
             Value::Nil => "nil".to_string(),
+            Value::MultipleValues => "#<multiple-values>".to_string(),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {

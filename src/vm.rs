@@ -152,6 +152,8 @@ pub struct VM {
     pub last_return_count: Option<usize>,
     /// Flag indicating if we're in a multiple-value context
     pub in_multiple_value_context: bool,
+    /// Buffer to store multiple values for REPL output
+    pub multiple_values_buffer: Vec<Value>,
 }
 
 /// Maximum stack size to prevent stack overflow
@@ -174,6 +176,7 @@ impl VM {
             output_produced: false,
             last_return_count: None,
             in_multiple_value_context: false,
+            multiple_values_buffer: Vec::new(),
         };
 
         // Initialize built-in functions in global environment
@@ -201,6 +204,12 @@ impl VM {
         self.globals.insert(
             "equal?".to_string(),
             Value::builtin("equal?".to_string(), 2),
+        );
+
+        // Add values function (variadic - accepts any number of arguments)
+        self.globals.insert(
+            "values".to_string(),
+            Value::builtin("values".to_string(), 0), // 0 indicates variadic
         );
     }
 
@@ -325,6 +334,7 @@ impl VM {
             Value::Number(n) => print!("{}", n),
             Value::Boolean(b) => print!("{}", if *b { "#t" } else { "#f" }),
             Value::Nil => print!("nil"),
+            Value::MultipleValues => print!("#<multiple-values>"),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -855,14 +865,15 @@ impl VM {
                         if let Some(trace) = execution_trace {
                             self.complete_execution_trace(trace);
                         }
-                        // End of program - for multiple values at top level, display all values
+                        // End of program - for multiple values at top level, store in buffer
                         if value_count > 1 {
-                            // Display all values (Scheme REPL behavior)
+                            // Store all values in buffer for later processing
+                            self.multiple_values_buffer.clear();
                             for i in 0..value_count {
                                 let value = self.peek(value_count - 1 - i)?;
-                                println!("{}", value);
+                                self.multiple_values_buffer.push(value.clone());
                             }
-                            return Ok(Value::Nil); // Return nil to avoid double printing
+                            return Ok(Value::MultipleValues); // Return flag to indicate multiple values
                         } else if value_count == 1 {
                             return Ok(self.peek(0)?.clone());
                         } else {
@@ -1444,6 +1455,7 @@ impl VM {
                 }
             }
             Value::Nil => "nil".to_string(),
+            Value::MultipleValues => "#<multiple-values>".to_string(),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -1598,8 +1610,8 @@ impl VM {
         expected_arity: usize,
         arg_count: usize,
     ) -> Result<(), RuntimeError> {
-        // Check arity
-        if expected_arity != arg_count {
+        // Check arity (0 means variadic - accepts any number of arguments)
+        if expected_arity != 0 && expected_arity != arg_count {
             return Err(RuntimeError::ArityMismatch {
                 expected: expected_arity,
                 got: arg_count,
@@ -1635,6 +1647,7 @@ impl VM {
             "destructure-values" => self.builtin_destructure_values(arg_count),
             "destructure-for-let-values" => self.builtin_destructure_for_let_values(arg_count),
             "extract-value-at" => self.builtin_extract_value_at(arg_count),
+            "values" => self.builtin_values(arg_count),
             _ => Err(RuntimeError::InvalidOperation(format!(
                 "Unknown built-in function: {}",
                 name
@@ -2812,6 +2825,7 @@ impl VM {
                 }
             }
             Value::Nil => 0,
+            Value::MultipleValues => 42, // Arbitrary hash for multiple values
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -3194,6 +3208,44 @@ impl VM {
         Ok(())
     }
 
+    /// Implement the values built-in function
+    fn builtin_values(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        // values can take any number of arguments and returns them as multiple values
+        
+        if arg_count == 0 {
+            // No arguments - return zero values (empty)
+            // For now, we'll push nil to maintain stack consistency
+            self.push(Value::Nil)?;
+        } else if arg_count == 1 {
+            // Single argument - just return it as-is (already on stack)
+            // No need to do anything, the value is already on the stack
+        } else {
+            // Multiple arguments - we need to use OP_RETURN_VALUES
+            // The arguments are already on the stack in the correct order
+            // We need to emit an OP_RETURN_VALUES instruction with the count
+            
+            // For now, let's create a simple implementation that works with our current setup
+            // We'll collect all the values and store them in the buffer, then return MultipleValues
+            self.multiple_values_buffer.clear();
+            
+            // Collect all arguments from the stack (they're at the top)
+            for i in 0..arg_count {
+                let value = self.peek(arg_count - 1 - i)?;
+                self.multiple_values_buffer.push(value.clone());
+            }
+            
+            // Pop all the arguments
+            for _ in 0..arg_count {
+                self.pop()?;
+            }
+            
+            // Push the MultipleValues flag
+            // self.push(Value::MultipleValues)?;
+        }
+        
+        Ok(())
+    }
+
     /// Check if multiple values are valid in current context
     fn validate_value_context(&self, value_count: usize) -> Result<(), RuntimeError> {
         if self.in_multiple_value_context {
@@ -3215,7 +3267,7 @@ impl VM {
             Value::Number(_) => "number".to_string(),
             Value::Boolean(_) => "boolean".to_string(),
             Value::Nil => "nil".to_string(),
-
+            Value::MultipleValues => "multiple-values".to_string(),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
                     match &*obj_ref {
@@ -3235,6 +3287,16 @@ impl VM {
                 }
             }
         }
+    }
+
+    /// Get the buffered multiple values for REPL output
+    pub fn get_multiple_values(&self) -> &[Value] {
+        &self.multiple_values_buffer
+    }
+
+    /// Clear the multiple values buffer
+    pub fn clear_multiple_values_buffer(&mut self) {
+        self.multiple_values_buffer.clear();
     }
 }
 

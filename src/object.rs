@@ -11,6 +11,7 @@ pub enum Value {
     Boolean(bool),
     Nil,
     Object(Rc<RefCell<Object>>),
+    MultipleValues,
 }
 
 /// Object types for heap-allocated Scheme values
@@ -421,6 +422,11 @@ impl Value {
     pub fn is_falsy(&self) -> bool {
         !self.is_truthy()
     }
+
+    /// Check if this value represents multiple values
+    pub fn is_multiple_values(&self) -> bool {
+        matches!(self, Value::MultipleValues)
+    }
 }
 
 impl PartialEq for Value {
@@ -429,6 +435,7 @@ impl PartialEq for Value {
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
+            (Value::MultipleValues, Value::MultipleValues) => true,
             (Value::Object(a), Value::Object(b)) => {
                 // For objects, we compare by reference (eq? semantics)
                 Rc::ptr_eq(a, b)
@@ -455,6 +462,7 @@ impl fmt::Display for Value {
             Value::Boolean(true) => write!(f, "#t"),
             Value::Boolean(false) => write!(f, "#f"),
             Value::Nil => write!(f, "()"),
+            Value::MultipleValues => write!(f, "#<multiple-values>"),
             Value::Object(obj) => {
                 match &*obj.borrow() {
                     Object::String(s) => write!(f, "\"{}\"", s),
@@ -522,6 +530,7 @@ impl Value {
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
+            (Value::MultipleValues, Value::MultipleValues) => true,
             (Value::Object(a), Value::Object(b)) => {
                 match (&*a.borrow(), &*b.borrow()) {
                     (Object::String(s1), Object::String(s2)) => s1 == s2,
