@@ -2,14 +2,14 @@ use std::fmt;
 
 /// Represents all possible tokens in the MiniScheme language
 #[derive(Debug, PartialEq, Clone)]
-pub enum Token {
+pub enum TokenType {
     // Literals
     Identifier(String),
     Number(f64),
     String(String),
     Character(char),
     Boolean(bool),
-    
+
     // Keywords and Special Forms
     Define,
     Lambda,
@@ -23,12 +23,12 @@ pub enum Token {
     CallWithValues,
     Import,
     Begin,
-    SetBang,        // set!
-    QuoteKeyword,   // quote (keyword form)
-    QuasiQuote,     // quasiquote
-    UnQuote,        // unquote
+    SetBang,         // set!
+    QuoteKeyword,    // quote (keyword form)
+    QuasiQuote,      // quasiquote
+    UnQuote,         // unquote
     UnQuoteSplicing, // unquote-splicing
-    
+
     // Built-in Procedures
     Car,
     Cdr,
@@ -40,287 +40,341 @@ pub enum Token {
     Error,
     Values,
     ForEach,
-    
+
     // Type Predicates
-    NullQ,      // null?
-    PairQ,      // pair?
-    NumberQ,    // number?
-    StringQ,    // string?
-    BooleanQ,   // boolean?
-    CharQ,      // char?
-    
+    NullQ,    // null?
+    PairQ,    // pair?
+    NumberQ,  // number?
+    StringQ,  // string?
+    BooleanQ, // boolean?
+    CharQ,    // char?
+
     // Hashtable Operations
     MakeHashtable,   // make-hashtable
     HashtableSet,    // hashtable-set!
     HashtableRef,    // hashtable-ref
     HashtableDelete, // hashtable-delete!
-    
+
     // Hash Functions
-    StringHash,      // string-hash
-    EqualHash,       // equal-hash
-    
+    StringHash, // string-hash
+    EqualHash,  // equal-hash
+
     // Additional Equality Predicates
-    EqualQ,          // equal?
-    
+    EqualQ, // equal?
+
     // Predicates
-    HashtableQ,     // hashtable?
-    CharNumericQ,   // char-numeric?
+    HashtableQ,      // hashtable?
+    CharNumericQ,    // char-numeric?
     CharWhitespaceQ, // char-whitespace?
-    EqQ,            // eq?
-    CharEqQ,        // char=?
-    StringEqQ,      // string=?
-    
+    EqQ,             // eq?
+    CharEqQ,         // char=?
+    StringEqQ,       // string=?
+
     // Type Conversions
     StringToNumber, // string->number
     ListToString,   // list->string
     ListToVector,   // list->vector
     VectorToList,   // vector->list
-    
+
     // Vector Operations
-    VectorQ,        // vector?
-    VectorLength,   // vector-length
-    VectorRef,      // vector-ref
-    VectorSet,      // vector-set!
-    
+    VectorQ,      // vector?
+    VectorLength, // vector-length
+    VectorRef,    // vector-ref
+    VectorSet,    // vector-set!
+
     // Arithmetic Operations
-    Plus,           // +
-    Minus,          // -
-    Multiply,       // *
-    Divide,         // /
-    
+    Plus,     // +
+    Minus,    // -
+    Multiply, // *
+    Divide,   // /
+
     // Comparison Operations
-    Equal,          // =
-    LessThan,       // <
-    LessThanEqual,  // <=
-    GreaterThan,    // >
+    Equal,            // =
+    LessThan,         // <
+    LessThanEqual,    // <=
+    GreaterThan,      // >
     GreaterThanEqual, // >=
-    
+
     // Punctuation
     LeftParen,
     RightParen,
-    QuoteMark,      // '
-    BackQuote,      // `
-    Comma,          // ,
-    CommaAt,        // ,@
-    VectorPrefix,   // # (for vectors)
-    Dot,            // . (for dotted pairs)
-    
+    QuoteMark,    // '
+    BackQuote,    // `
+    Comma,        // ,
+    CommaAt,      // ,@
+    VectorPrefix, // # (for vectors)
+    Dot,          // . (for dotted pairs)
+
     // Special Values
-    Null,           // null
-    
+    Null, // null
+
     // Special
     Eof,
 }
 
 /// Token with position information for error reporting
 #[derive(Debug, PartialEq, Clone)]
-pub struct TokenInfo {
-    pub token: Token,
+pub struct Token {
+    pub token_type: TokenType,
     pub line: usize,
     pub column: usize,
     pub span: (usize, usize), // start and end positions in source
 }
 
-impl TokenInfo {
-    pub fn new(token: Token, line: usize, column: usize, start: usize, end: usize) -> Self {
+impl Token {
+    pub fn new(token: TokenType, line: usize, column: usize, start: usize, end: usize) -> Self {
         Self {
-            token,
+            token_type: token,
             line,
             column,
             span: (start, end),
         }
     }
-    
+
     /// Get the length of the token in the source
     pub fn len(&self) -> usize {
         self.span.1 - self.span.0
     }
-    
+
     /// Check if this token is empty (shouldn't happen in practice)
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Get the start position of the token
     pub fn start(&self) -> usize {
         self.span.0
     }
-    
+
     /// Get the end position of the token
     pub fn end(&self) -> usize {
         self.span.1
     }
-    
+
     /// Create a TokenInfo for EOF at the given position
     pub fn eof(line: usize, column: usize, position: usize) -> Self {
-        Self::new(Token::Eof, line, column, position, position)
+        Self::new(TokenType::Eof, line, column, position, position)
     }
-    
+
     /// Check if this token is a literal value
     pub fn is_literal(&self) -> bool {
         matches!(
-            self.token,
-            Token::Number(_) | Token::String(_) | Token::Character(_) | Token::Boolean(_)
+            self.token_type,
+            TokenType::Number(_)
+                | TokenType::String(_)
+                | TokenType::Character(_)
+                | TokenType::Boolean(_)
         )
     }
-    
+
     /// Check if this token is an identifier
     pub fn is_identifier(&self) -> bool {
-        matches!(self.token, Token::Identifier(_))
+        matches!(self.token_type, TokenType::Identifier(_))
     }
-    
+
     /// Check if this token is a keyword or special form
     pub fn is_keyword(&self) -> bool {
         matches!(
-            self.token,
-            Token::Define | Token::Lambda | Token::If | Token::Cond | Token::Else
-            | Token::Let | Token::LetStar | Token::LetLoop | Token::LetValues
-            | Token::CallWithValues | Token::Import | Token::Begin | Token::SetBang
-            | Token::QuoteKeyword | Token::QuasiQuote | Token::UnQuote | Token::UnQuoteSplicing
+            self.token_type,
+            TokenType::Define
+                | TokenType::Lambda
+                | TokenType::If
+                | TokenType::Cond
+                | TokenType::Else
+                | TokenType::Let
+                | TokenType::LetStar
+                | TokenType::LetLoop
+                | TokenType::LetValues
+                | TokenType::CallWithValues
+                | TokenType::Import
+                | TokenType::Begin
+                | TokenType::SetBang
+                | TokenType::QuoteKeyword
+                | TokenType::QuasiQuote
+                | TokenType::UnQuote
+                | TokenType::UnQuoteSplicing
         )
     }
-    
+
     /// Check if this token is a built-in procedure
     pub fn is_builtin(&self) -> bool {
         matches!(
-            self.token,
-            Token::Car | Token::Cdr | Token::Cons | Token::List | Token::Vector
-            | Token::Display | Token::Newline | Token::Error | Token::Values | Token::ForEach
-            | Token::NullQ | Token::PairQ | Token::NumberQ | Token::StringQ 
-            | Token::BooleanQ | Token::CharQ
-            | Token::MakeHashtable | Token::HashtableSet | Token::HashtableRef | Token::HashtableDelete
-            | Token::StringHash | Token::EqualHash | Token::EqualQ
-            | Token::Plus | Token::Minus | Token::Multiply | Token::Divide
-            | Token::Equal | Token::LessThan | Token::LessThanEqual | Token::GreaterThan | Token::GreaterThanEqual
+            self.token_type,
+            TokenType::Car
+                | TokenType::Cdr
+                | TokenType::Cons
+                | TokenType::List
+                | TokenType::Vector
+                | TokenType::Display
+                | TokenType::Newline
+                | TokenType::Error
+                | TokenType::Values
+                | TokenType::ForEach
+                | TokenType::NullQ
+                | TokenType::PairQ
+                | TokenType::NumberQ
+                | TokenType::StringQ
+                | TokenType::BooleanQ
+                | TokenType::CharQ
+                | TokenType::MakeHashtable
+                | TokenType::HashtableSet
+                | TokenType::HashtableRef
+                | TokenType::HashtableDelete
+                | TokenType::StringHash
+                | TokenType::EqualHash
+                | TokenType::EqualQ
+                | TokenType::Plus
+                | TokenType::Minus
+                | TokenType::Multiply
+                | TokenType::Divide
+                | TokenType::Equal
+                | TokenType::LessThan
+                | TokenType::LessThanEqual
+                | TokenType::GreaterThan
+                | TokenType::GreaterThanEqual
         )
     }
-    
+
     /// Check if this token is a predicate (ends with ?)
     pub fn is_predicate(&self) -> bool {
         matches!(
-            self.token,
-            Token::HashtableQ | Token::StringQ | Token::NumberQ | Token::BooleanQ
-            | Token::CharQ | Token::CharNumericQ | Token::CharWhitespaceQ | Token::NullQ
-            | Token::PairQ | Token::EqQ | Token::CharEqQ | Token::StringEqQ | Token::EqualQ
+            self.token_type,
+            TokenType::HashtableQ
+                | TokenType::StringQ
+                | TokenType::NumberQ
+                | TokenType::BooleanQ
+                | TokenType::CharQ
+                | TokenType::CharNumericQ
+                | TokenType::CharWhitespaceQ
+                | TokenType::NullQ
+                | TokenType::PairQ
+                | TokenType::EqQ
+                | TokenType::CharEqQ
+                | TokenType::StringEqQ
+                | TokenType::EqualQ
         )
     }
 }
-impl fmt::Display for Token {
+impl fmt::Display for TokenType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             // Literals
-            Token::Identifier(s) => write!(f, "identifier '{}'", s),
-            Token::Number(n) => write!(f, "number {}", n),
-            Token::String(s) => write!(f, "string \"{}\"", s),
-            Token::Character(c) => write!(f, "character #\\{}", c),
-            Token::Boolean(b) => write!(f, "boolean #{}", if *b { "t" } else { "f" }),
-            
+            TokenType::Identifier(s) => write!(f, "identifier '{}'", s),
+            TokenType::Number(n) => write!(f, "number {}", n),
+            TokenType::String(s) => write!(f, "string \"{}\"", s),
+            TokenType::Character(c) => write!(f, "character #\\{}", c),
+            TokenType::Boolean(b) => write!(f, "boolean #{}", if *b { "t" } else { "f" }),
+
             // Keywords and Special Forms
-            Token::Define => write!(f, "define"),
-            Token::Lambda => write!(f, "lambda"),
-            Token::If => write!(f, "if"),
-            Token::Cond => write!(f, "cond"),
-            Token::Else => write!(f, "else"),
-            Token::Let => write!(f, "let"),
-            Token::LetStar => write!(f, "let*"),
-            Token::LetLoop => write!(f, "let loop"),
-            Token::LetValues => write!(f, "let-values"),
-            Token::CallWithValues => write!(f, "call-with-values"),
-            Token::Import => write!(f, "import"),
-            Token::Begin => write!(f, "begin"),
-            Token::SetBang => write!(f, "set!"),
-            Token::QuoteKeyword => write!(f, "quote"),
-            Token::QuasiQuote => write!(f, "quasiquote"),
-            Token::UnQuote => write!(f, "unquote"),
-            Token::UnQuoteSplicing => write!(f, "unquote-splicing"),
-            
+            TokenType::Define => write!(f, "define"),
+            TokenType::Lambda => write!(f, "lambda"),
+            TokenType::If => write!(f, "if"),
+            TokenType::Cond => write!(f, "cond"),
+            TokenType::Else => write!(f, "else"),
+            TokenType::Let => write!(f, "let"),
+            TokenType::LetStar => write!(f, "let*"),
+            TokenType::LetLoop => write!(f, "let loop"),
+            TokenType::LetValues => write!(f, "let-values"),
+            TokenType::CallWithValues => write!(f, "call-with-values"),
+            TokenType::Import => write!(f, "import"),
+            TokenType::Begin => write!(f, "begin"),
+            TokenType::SetBang => write!(f, "set!"),
+            TokenType::QuoteKeyword => write!(f, "quote"),
+            TokenType::QuasiQuote => write!(f, "quasiquote"),
+            TokenType::UnQuote => write!(f, "unquote"),
+            TokenType::UnQuoteSplicing => write!(f, "unquote-splicing"),
+
             // Built-in Procedures
-            Token::Car => write!(f, "car"),
-            Token::Cdr => write!(f, "cdr"),
-            Token::Cons => write!(f, "cons"),
-            Token::List => write!(f, "list"),
-            Token::Vector => write!(f, "vector"),
-            Token::Display => write!(f, "display"),
-            Token::Newline => write!(f, "newline"),
-            Token::Error => write!(f, "error"),
-            Token::Values => write!(f, "values"),
-            Token::ForEach => write!(f, "for-each"),
-            
+            TokenType::Car => write!(f, "car"),
+            TokenType::Cdr => write!(f, "cdr"),
+            TokenType::Cons => write!(f, "cons"),
+            TokenType::List => write!(f, "list"),
+            TokenType::Vector => write!(f, "vector"),
+            TokenType::Display => write!(f, "display"),
+            TokenType::Newline => write!(f, "newline"),
+            TokenType::Error => write!(f, "error"),
+            TokenType::Values => write!(f, "values"),
+            TokenType::ForEach => write!(f, "for-each"),
+
             // Type Predicates
-            Token::NullQ => write!(f, "null?"),
-            Token::PairQ => write!(f, "pair?"),
-            Token::NumberQ => write!(f, "number?"),
-            Token::StringQ => write!(f, "string?"),
-            Token::BooleanQ => write!(f, "boolean?"),
-            Token::CharQ => write!(f, "char?"),
-            
+            TokenType::NullQ => write!(f, "null?"),
+            TokenType::PairQ => write!(f, "pair?"),
+            TokenType::NumberQ => write!(f, "number?"),
+            TokenType::StringQ => write!(f, "string?"),
+            TokenType::BooleanQ => write!(f, "boolean?"),
+            TokenType::CharQ => write!(f, "char?"),
+
             // Hashtable Operations
-            Token::MakeHashtable => write!(f, "make-hashtable"),
-            Token::HashtableSet => write!(f, "hashtable-set!"),
-            Token::HashtableRef => write!(f, "hashtable-ref"),
-            Token::HashtableDelete => write!(f, "hashtable-delete!"),
-            
+            TokenType::MakeHashtable => write!(f, "make-hashtable"),
+            TokenType::HashtableSet => write!(f, "hashtable-set!"),
+            TokenType::HashtableRef => write!(f, "hashtable-ref"),
+            TokenType::HashtableDelete => write!(f, "hashtable-delete!"),
+
             // Hash Functions
-            Token::StringHash => write!(f, "string-hash"),
-            Token::EqualHash => write!(f, "equal-hash"),
-            
+            TokenType::StringHash => write!(f, "string-hash"),
+            TokenType::EqualHash => write!(f, "equal-hash"),
+
             // Additional Equality Predicates
-            Token::EqualQ => write!(f, "equal?"),
-            
+            TokenType::EqualQ => write!(f, "equal?"),
+
             // Predicates
-            Token::HashtableQ => write!(f, "hashtable?"),
-            Token::CharNumericQ => write!(f, "char-numeric?"),
-            Token::CharWhitespaceQ => write!(f, "char-whitespace?"),
-            Token::EqQ => write!(f, "eq?"),
-            Token::CharEqQ => write!(f, "char=?"),
-            Token::StringEqQ => write!(f, "string=?"),
-            
+            TokenType::HashtableQ => write!(f, "hashtable?"),
+            TokenType::CharNumericQ => write!(f, "char-numeric?"),
+            TokenType::CharWhitespaceQ => write!(f, "char-whitespace?"),
+            TokenType::EqQ => write!(f, "eq?"),
+            TokenType::CharEqQ => write!(f, "char=?"),
+            TokenType::StringEqQ => write!(f, "string=?"),
+
             // Type Conversions
-            Token::StringToNumber => write!(f, "string->number"),
-            Token::ListToString => write!(f, "list->string"),
-            Token::ListToVector => write!(f, "list->vector"),
-            Token::VectorToList => write!(f, "vector->list"),
-            
+            TokenType::StringToNumber => write!(f, "string->number"),
+            TokenType::ListToString => write!(f, "list->string"),
+            TokenType::ListToVector => write!(f, "list->vector"),
+            TokenType::VectorToList => write!(f, "vector->list"),
+
             // Vector Operations
-            Token::VectorQ => write!(f, "vector?"),
-            Token::VectorLength => write!(f, "vector-length"),
-            Token::VectorRef => write!(f, "vector-ref"),
-            Token::VectorSet => write!(f, "vector-set!"),
-            
+            TokenType::VectorQ => write!(f, "vector?"),
+            TokenType::VectorLength => write!(f, "vector-length"),
+            TokenType::VectorRef => write!(f, "vector-ref"),
+            TokenType::VectorSet => write!(f, "vector-set!"),
+
             // Arithmetic Operations
-            Token::Plus => write!(f, "+"),
-            Token::Minus => write!(f, "-"),
-            Token::Multiply => write!(f, "*"),
-            Token::Divide => write!(f, "/"),
-            
+            TokenType::Plus => write!(f, "+"),
+            TokenType::Minus => write!(f, "-"),
+            TokenType::Multiply => write!(f, "*"),
+            TokenType::Divide => write!(f, "/"),
+
             // Comparison Operations
-            Token::Equal => write!(f, "="),
-            Token::LessThan => write!(f, "<"),
-            Token::LessThanEqual => write!(f, "<="),
-            Token::GreaterThan => write!(f, ">"),
-            Token::GreaterThanEqual => write!(f, ">="),
-            
+            TokenType::Equal => write!(f, "="),
+            TokenType::LessThan => write!(f, "<"),
+            TokenType::LessThanEqual => write!(f, "<="),
+            TokenType::GreaterThan => write!(f, ">"),
+            TokenType::GreaterThanEqual => write!(f, ">="),
+
             // Punctuation
-            Token::LeftParen => write!(f, "("),
-            Token::RightParen => write!(f, ")"),
-            Token::QuoteMark => write!(f, "'"),
-            Token::BackQuote => write!(f, "`"),
-            Token::Comma => write!(f, ","),
-            Token::CommaAt => write!(f, ",@"),
-            Token::VectorPrefix => write!(f, "#"),
-            Token::Dot => write!(f, "."),
-            
+            TokenType::LeftParen => write!(f, "("),
+            TokenType::RightParen => write!(f, ")"),
+            TokenType::QuoteMark => write!(f, "'"),
+            TokenType::BackQuote => write!(f, "`"),
+            TokenType::Comma => write!(f, ","),
+            TokenType::CommaAt => write!(f, ",@"),
+            TokenType::VectorPrefix => write!(f, "#"),
+            TokenType::Dot => write!(f, "."),
+
             // Special Values
-            Token::Null => write!(f, "null"),
-            
+            TokenType::Null => write!(f, "null"),
+
             // Special
-            Token::Eof => write!(f, "end of file"),
+            TokenType::Eof => write!(f, "end of file"),
         }
     }
 }
 
-impl fmt::Display for TokenInfo {
+impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} at line {}, column {}", self.token, self.line, self.column)
+        write!(
+            f,
+            "{} at line {}, column {}",
+            self.token_type, self.line, self.column
+        )
     }
 }

@@ -78,7 +78,7 @@ fn tokenize_input(input: &str, verbose: bool) {
     } else {
         println!("Tokens:");
         for token in &tokens {
-            println!("  {:?}", token.token);
+            println!("  {:?}", token.token_type);
         }
     }
     

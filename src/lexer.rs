@@ -1,5 +1,5 @@
 use crate::error::LexError;
-use crate::token::{Token, TokenInfo};
+use crate::token::{Token, TokenType};
 
 /// Lexer for tokenizing MiniScheme source code
 pub struct Lexer {
@@ -21,12 +21,12 @@ impl Lexer {
     }
 
     /// Tokenize the entire input and return a vector of tokens
-    pub fn tokenize(&mut self) -> Result<Vec<TokenInfo>, LexError> {
+    pub fn tokenize(&mut self) -> Result<Vec<Token>, LexError> {
         let mut tokens = Vec::new();
 
         loop {
             let token = self.next_token()?;
-            let is_eof = matches!(token.token, Token::Eof);
+            let is_eof = matches!(token.token_type, TokenType::Eof);
             tokens.push(token);
 
             if is_eof {
@@ -38,7 +38,7 @@ impl Lexer {
     }
 
     /// Get the next token from the input
-    pub fn next_token(&mut self) -> Result<TokenInfo, LexError> {
+    pub fn next_token(&mut self) -> Result<Token, LexError> {
         // Skip whitespace and comments
         self.skip_whitespace();
 
@@ -47,8 +47,8 @@ impl Lexer {
         let column = self.column;
 
         match self.current_char() {
-            None => Ok(TokenInfo::new(
-                Token::Eof,
+            None => Ok(Token::new(
+                TokenType::Eof,
                 line,
                 column,
                 start_pos,
@@ -68,33 +68,33 @@ impl Lexer {
                     // Punctuation (must come before identifier check)
                     '(' => {
                         self.advance();
-                        Token::LeftParen
+                        TokenType::LeftParen
                     }
                     ')' => {
                         self.advance();
-                        Token::RightParen
+                        TokenType::RightParen
                     }
                     '\'' => {
                         self.advance();
-                        Token::QuoteMark
+                        TokenType::QuoteMark
                     }
                     '`' => {
                         self.advance();
-                        Token::BackQuote
+                        TokenType::BackQuote
                     }
                     ',' => {
                         self.advance();
                         // Check for ,@ (comma-at)
                         if self.current_char() == Some('@') {
                             self.advance();
-                            Token::CommaAt
+                            TokenType::CommaAt
                         } else {
-                            Token::Comma
+                            TokenType::Comma
                         }
                     }
                     '.' => {
                         self.advance();
-                        Token::Dot
+                        TokenType::Dot
                     }
                     // Identifiers and keywords (after punctuation)
                     _ if self.is_identifier_start(ch) => self.read_identifier(),
@@ -109,13 +109,7 @@ impl Lexer {
                     }
                 };
 
-                Ok(TokenInfo::new(
-                    token,
-                    line,
-                    column,
-                    start_pos,
-                    self.position,
-                ))
+                Ok(Token::new(token, line, column, start_pos, self.position))
             }
         }
     }
@@ -177,7 +171,7 @@ impl Lexer {
     }
 
     /// Read an identifier from the input
-    fn read_identifier(&mut self) -> Token {
+    fn read_identifier(&mut self) -> TokenType {
         let mut identifier = String::new();
 
         while let Some(ch) = self.current_char() {
@@ -193,100 +187,100 @@ impl Lexer {
     }
 
     /// Convert identifier string to keyword token or return as identifier
-    fn keyword_or_identifier(&self, identifier: String) -> Token {
+    fn keyword_or_identifier(&self, identifier: String) -> TokenType {
         match identifier.as_str() {
             // Keywords and Special Forms
-            "define" => Token::Define,
-            "lambda" => Token::Lambda,
-            "if" => Token::If,
-            "cond" => Token::Cond,
-            "else" => Token::Else,
-            "let" => Token::Let,
-            "let*" => Token::LetStar,
-            "let-values" => Token::LetValues,
-            "call-with-values" => Token::CallWithValues,
-            "import" => Token::Import,
-            "begin" => Token::Begin,
-            "set!" => Token::SetBang,
-            "quote" => Token::QuoteKeyword,
-            "quasiquote" => Token::QuasiQuote,
-            "unquote" => Token::UnQuote,
-            "unquote-splicing" => Token::UnQuoteSplicing,
+            "define" => TokenType::Define,
+            "lambda" => TokenType::Lambda,
+            "if" => TokenType::If,
+            "cond" => TokenType::Cond,
+            "else" => TokenType::Else,
+            "let" => TokenType::Let,
+            "let*" => TokenType::LetStar,
+            "let-values" => TokenType::LetValues,
+            "call-with-values" => TokenType::CallWithValues,
+            "import" => TokenType::Import,
+            "begin" => TokenType::Begin,
+            "set!" => TokenType::SetBang,
+            "quote" => TokenType::QuoteKeyword,
+            "quasiquote" => TokenType::QuasiQuote,
+            "unquote" => TokenType::UnQuote,
+            "unquote-splicing" => TokenType::UnQuoteSplicing,
 
             // Built-in Procedures
-            "car" => Token::Car,
-            "cdr" => Token::Cdr,
-            "cons" => Token::Cons,
-            "list" => Token::List,
-            "vector" => Token::Vector,
-            "display" => Token::Display,
-            "newline" => Token::Newline,
-            "error" => Token::Error,
-            "values" => Token::Values,
-            "for-each" => Token::ForEach,
-            
+            "car" => TokenType::Car,
+            "cdr" => TokenType::Cdr,
+            "cons" => TokenType::Cons,
+            "list" => TokenType::List,
+            "vector" => TokenType::Vector,
+            "display" => TokenType::Display,
+            "newline" => TokenType::Newline,
+            "error" => TokenType::Error,
+            "values" => TokenType::Values,
+            "for-each" => TokenType::ForEach,
+
             // Type Predicates
-            "null?" => Token::NullQ,
-            "pair?" => Token::PairQ,
-            "number?" => Token::NumberQ,
-            "string?" => Token::StringQ,
-            "boolean?" => Token::BooleanQ,
-            "char?" => Token::CharQ,
+            "null?" => TokenType::NullQ,
+            "pair?" => TokenType::PairQ,
+            "number?" => TokenType::NumberQ,
+            "string?" => TokenType::StringQ,
+            "boolean?" => TokenType::BooleanQ,
+            "char?" => TokenType::CharQ,
 
             // Hashtable Operations
-            "make-hashtable" => Token::MakeHashtable,
-            "hashtable-set!" => Token::HashtableSet,
-            "hashtable-ref" => Token::HashtableRef,
-            "hashtable-delete!" => Token::HashtableDelete,
+            "make-hashtable" => TokenType::MakeHashtable,
+            "hashtable-set!" => TokenType::HashtableSet,
+            "hashtable-ref" => TokenType::HashtableRef,
+            "hashtable-delete!" => TokenType::HashtableDelete,
 
             // Hash Functions
-            "string-hash" => Token::StringHash,
-            "equal-hash" => Token::EqualHash,
+            "string-hash" => TokenType::StringHash,
+            "equal-hash" => TokenType::EqualHash,
 
             // Predicates
-            "equal?" => Token::EqualQ,
-            "hashtable?" => Token::HashtableQ,
-            "char-numeric?" => Token::CharNumericQ,
-            "char-whitespace?" => Token::CharWhitespaceQ,
-            "eq?" => Token::EqQ,
-            "char=?" => Token::CharEqQ,
-            "string=?" => Token::StringEqQ,
+            "equal?" => TokenType::EqualQ,
+            "hashtable?" => TokenType::HashtableQ,
+            "char-numeric?" => TokenType::CharNumericQ,
+            "char-whitespace?" => TokenType::CharWhitespaceQ,
+            "eq?" => TokenType::EqQ,
+            "char=?" => TokenType::CharEqQ,
+            "string=?" => TokenType::StringEqQ,
 
             // Type Conversions
-            "string->number" => Token::StringToNumber,
-            "list->string" => Token::ListToString,
-            "list->vector" => Token::ListToVector,
-            "vector->list" => Token::VectorToList,
-            
+            "string->number" => TokenType::StringToNumber,
+            "list->string" => TokenType::ListToString,
+            "list->vector" => TokenType::ListToVector,
+            "vector->list" => TokenType::VectorToList,
+
             // Vector Operations
-            "vector?" => Token::VectorQ,
-            "vector-length" => Token::VectorLength,
-            "vector-ref" => Token::VectorRef,
-            "vector-set!" => Token::VectorSet,
+            "vector?" => TokenType::VectorQ,
+            "vector-length" => TokenType::VectorLength,
+            "vector-ref" => TokenType::VectorRef,
+            "vector-set!" => TokenType::VectorSet,
 
             // Arithmetic Operations
-            "+" => Token::Plus,
-            "-" => Token::Minus,
-            "*" => Token::Multiply,
-            "/" => Token::Divide,
+            "+" => TokenType::Plus,
+            "-" => TokenType::Minus,
+            "*" => TokenType::Multiply,
+            "/" => TokenType::Divide,
 
             // Comparison Operations
-            "=" => Token::Equal,
-            "<" => Token::LessThan,
-            "<=" => Token::LessThanEqual,
-            ">" => Token::GreaterThan,
-            ">=" => Token::GreaterThanEqual,
+            "=" => TokenType::Equal,
+            "<" => TokenType::LessThan,
+            "<=" => TokenType::LessThanEqual,
+            ">" => TokenType::GreaterThan,
+            ">=" => TokenType::GreaterThanEqual,
 
             // Special Values
-            "null" => Token::Null,
+            "null" => TokenType::Null,
 
             // Default case - return as identifier
-            _ => Token::Identifier(identifier),
+            _ => TokenType::Identifier(identifier),
         }
     }
 
     /// Read a number from the input (integers and floating-point numbers)
-    fn read_number(&mut self) -> Result<Token, LexError> {
+    fn read_number(&mut self) -> Result<TokenType, LexError> {
         let mut number_str = String::new();
         let start_line = self.line;
         let start_column = self.column;
@@ -344,7 +338,7 @@ impl Lexer {
 
         // Parse the number
         match number_str.parse::<f64>() {
-            Ok(num) => Ok(Token::Number(num)),
+            Ok(num) => Ok(TokenType::Number(num)),
             Err(_) => Err(LexError::InvalidNumber {
                 text: number_str,
                 line: start_line,
@@ -354,7 +348,7 @@ impl Lexer {
     }
 
     /// Read a string literal from the input
-    fn read_string(&mut self) -> Result<Token, LexError> {
+    fn read_string(&mut self) -> Result<TokenType, LexError> {
         let start_line = self.line;
         let start_column = self.column;
         let mut string_value = String::new();
@@ -367,7 +361,7 @@ impl Lexer {
                 '"' => {
                     // End of string
                     self.advance();
-                    return Ok(Token::String(string_value));
+                    return Ok(TokenType::String(string_value));
                 }
                 '\\' => {
                     // Escape sequence
@@ -421,7 +415,7 @@ impl Lexer {
     }
 
     /// Read hash-prefixed literals (#t, #f, #\char, #( for vectors)
-    fn read_hash_literal(&mut self) -> Result<Token, LexError> {
+    fn read_hash_literal(&mut self) -> Result<TokenType, LexError> {
         let start_line = self.line;
         let start_column = self.column;
 
@@ -431,11 +425,11 @@ impl Lexer {
         match self.current_char() {
             Some('t') => {
                 self.advance();
-                Ok(Token::Boolean(true))
+                Ok(TokenType::Boolean(true))
             }
             Some('f') => {
                 self.advance();
-                Ok(Token::Boolean(false))
+                Ok(TokenType::Boolean(false))
             }
             Some('\\') => {
                 // Character literal
@@ -444,7 +438,7 @@ impl Lexer {
             }
             Some('(') => {
                 // Vector prefix - don't consume the '(' as it will be handled separately
-                Ok(Token::VectorPrefix)
+                Ok(TokenType::VectorPrefix)
             }
             Some(other) => Err(LexError::InvalidCharacter {
                 text: format!("#{}", other),
@@ -463,7 +457,7 @@ impl Lexer {
         &mut self,
         start_line: usize,
         start_column: usize,
-    ) -> Result<Token, LexError> {
+    ) -> Result<TokenType, LexError> {
         match self.current_char() {
             Some(ch) => {
                 // Check for special character names
@@ -511,7 +505,7 @@ impl Lexer {
                     }
                 };
 
-                Ok(Token::Character(character))
+                Ok(TokenType::Character(character))
             }
             None => Err(LexError::UnexpectedEof {
                 line: start_line,

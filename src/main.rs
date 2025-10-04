@@ -17,7 +17,7 @@ pub use error::{LexError, ParseError};
 pub use lexer::Lexer;
 pub use object::Value;
 pub use parser::Parser;
-pub use token::{Token, TokenInfo};
+pub use token::{Token, TokenType};
 pub use vm::{RuntimeError, VM};
 
 use error::{ErrorContext, ErrorReporter, MiniSchemeError};
@@ -343,7 +343,7 @@ fn process_input_with_config_result(
                     // Don't print anything for unspecified values
                     return;
                 }
-                
+
                 // Handle multiple values case
                 if result.is_multiple_values() {
                     // Display all values from buffer (Scheme REPL behavior)
@@ -507,7 +507,7 @@ fn process_input_with_repl_vm_result(
                     // Don't print anything for unspecified values
                     return;
                 }
-                
+
                 if result.is_multiple_values() {
                     // Display all values from buffer (Scheme REPL behavior)
                     for value in vm.get_multiple_values() {
