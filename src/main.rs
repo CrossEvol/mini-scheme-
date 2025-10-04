@@ -338,6 +338,12 @@ fn process_input_with_config_result(
                 err
             })
             .map(|result| {
+                // Check for unspecified values first and suppress output completely
+                if result.is_unspecified() {
+                    // Don't print anything for unspecified values
+                    return;
+                }
+                
                 // Handle multiple values case
                 if result.is_multiple_values() {
                     // Display all values from buffer (Scheme REPL behavior)
@@ -345,16 +351,14 @@ fn process_input_with_config_result(
                         println!("{}", value);
                     }
                     vm.clear_multiple_values_buffer();
-                } else if !result.is_nil() {
-                    // Don't print nil values (used for statements that produce no output)
+                } else {
+                    // Print all other values, including nil and empty list
                     // Only show "Result:" prefix when debugging modes are enabled
                     if show_tokens || show_ast || show_bytecode {
                         println!("Result: {}", result);
                     } else {
                         println!("{}", result);
                     }
-                } else {
-                    println!("{}", result);
                 }
             })?;
     }
@@ -498,22 +502,25 @@ fn process_input_with_repl_vm_result(
                 err
             })
             .map(|result| {
-                // Don't print nil values (used for statements that produce no output)
+                // Check for unspecified values first and suppress output completely
+                if result.is_unspecified() {
+                    // Don't print anything for unspecified values
+                    return;
+                }
+                
                 if result.is_multiple_values() {
                     // Display all values from buffer (Scheme REPL behavior)
                     for value in vm.get_multiple_values() {
                         println!("{}", value);
                     }
                     vm.clear_multiple_values_buffer();
-                } else if !result.is_nil() {
-                    // Only show "Result:" prefix when debugging modes are enabled
+                } else {
+                    // Print all other values, including nil and empty list
                     if show_tokens || show_ast || show_bytecode {
                         println!("Result: {}", result);
                     } else {
                         println!("{}", result);
                     }
-                } else {
-                    println!("{}", result);
                 }
             })?;
     }

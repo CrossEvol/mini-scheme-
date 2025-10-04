@@ -217,10 +217,8 @@ impl VM {
             "display".to_string(),
             Value::builtin("display".to_string(), 1),
         );
-        self.globals.insert(
-            "write".to_string(),
-            Value::builtin("write".to_string(), 1),
-        );
+        self.globals
+            .insert("write".to_string(), Value::builtin("write".to_string(), 1));
         self.globals.insert(
             "newline".to_string(),
             Value::builtin("newline".to_string(), 0),
@@ -603,7 +601,7 @@ impl VM {
 
                 OpCode::OP_NEGATE => {
                     let value = self.pop()?;
-                    
+
                     // Check for unspecified value first with clear error message
                     if let Value::Unspecified = value {
                         return Err(RuntimeError::TypeError {
@@ -611,7 +609,7 @@ impl VM {
                             got: "unspecified value".to_string(),
                         });
                     }
-                    
+
                     match value {
                         Value::Number(n) => self.push(Value::Number(-n))?,
                         _ => {
@@ -720,7 +718,7 @@ impl VM {
                     // Step 1: Execute producer and capture return values
                     self.push(producer)?;
                     self.call_value(0)?;
-                    
+
                     // Execute the producer function until completion
                     let result = self.run_single_call()?;
 
@@ -1040,7 +1038,7 @@ impl VM {
 
                 OpCode::OP_CAR => {
                     let value = self.pop()?;
-                    
+
                     // Check for unspecified value first with clear error message
                     if let Value::Unspecified = value {
                         return Err(RuntimeError::TypeError {
@@ -1048,7 +1046,7 @@ impl VM {
                             got: "unspecified value".to_string(),
                         });
                     }
-                    
+
                     match &value {
                         Value::Object(obj) => {
                             if let Ok(obj_ref) = obj.try_borrow() {
@@ -1076,7 +1074,7 @@ impl VM {
 
                 OpCode::OP_CDR => {
                     let value = self.pop()?;
-                    
+
                     // Check for unspecified value first with clear error message
                     if let Value::Unspecified = value {
                         return Err(RuntimeError::TypeError {
@@ -1084,7 +1082,7 @@ impl VM {
                             got: "unspecified value".to_string(),
                         });
                     }
-                    
+
                     match &value {
                         Value::Object(obj) => {
                             if let Ok(obj_ref) = obj.try_borrow() {
@@ -2153,7 +2151,7 @@ impl VM {
         }
 
         // for-each returns unspecified value (push nil)
-        self.push(Value::Nil)?;
+        self.push(Value::Unspecified)?;
         Ok(())
     }
 
