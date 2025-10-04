@@ -16,19 +16,28 @@
   - Test AST node creation and field access
   - _Requirements: 4.1, 4.2_
 
-- [ ] 2. Implement docstring parsing logic in parser
+- [x] 2. Implement docstring parsing logic in parser
+
+
+
+
+
   - Add helper method `is_string_literal()` to check if current token is a string
   - Add helper method `parse_docstring_and_body()` to extract docstrings and parse function bodies
   - Implement logic to detect string literals immediately after parameter lists
   - _Requirements: 1.1, 1.2, 3.1, 3.2_
 
-- [ ] 2.1 Update parse_define method for docstring support
+- [x] 2.1 Update parse_define method for docstring support
+
+
   - Modify function definition parsing to detect and extract docstrings
   - Handle `(define (name params...) "docstring" body...)` syntax
   - Ensure backward compatibility with functions without docstrings
   - _Requirements: 1.1, 1.2, 5.1, 5.2_
 
-- [ ] 2.2 Update parse_lambda method for docstring support
+- [x] 2.2 Update parse_lambda method for docstring support
+
+
   - Modify lambda parsing to detect and extract docstrings
   - Handle `(lambda (params...) "docstring" body...)` syntax
   - Maintain existing lambda parsing behavior for functions without docstrings

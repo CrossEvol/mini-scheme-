@@ -411,6 +411,37 @@ impl Parser {
         self.tokens.get(self.position)
     }
 
+    /// Parse docstring and body expressions
+    /// Returns (docstring, body) where docstring is Some(string) if found, None otherwise
+    /// A string literal is only treated as a docstring if there are additional expressions after it
+    fn parse_docstring_and_body(&mut self) -> Result<(Option<String>, Vec<Expr>), ParseError> {
+        // First, collect all expressions
+        let mut all_expressions = Vec::new();
+        while let Some(token_info) = self.current_token() {
+            if matches!(token_info.token, Token::RightParen) {
+                break;
+            }
+            all_expressions.push(self.parse_expr()?);
+        }
+
+        // If we have more than one expression and the first is a string literal,
+        // treat the first as a docstring and the rest as the body
+        let (docstring, body) = if all_expressions.len() > 1 {
+            if let Some(Expr::String(s)) = all_expressions.first() {
+                let docstring = Some(s.clone());
+                let body = all_expressions.into_iter().skip(1).collect();
+                (docstring, body)
+            } else {
+                (None, all_expressions)
+            }
+        } else {
+            // If we have only one expression (or none), treat it as the body
+            (None, all_expressions)
+        };
+
+        Ok((docstring, body))
+    }
+
     fn peek_token(&self) -> Option<&TokenInfo> {
         self.tokens.get(self.position + 1)
     }
@@ -520,20 +551,31 @@ impl Parser {
 
                         self.expect_token(Token::RightParen)?; // consume closing ')'
 
-                        // Parse function body (for now, just one expression)
-                        let body_expr = self.parse_expr()?;
+                        // Parse docstring and function body
+                        let (docstring, body) = self.parse_docstring_and_body()?;
+
+                        // Ensure we have at least one body expression
+                        if body.is_empty() {
+                            return Err(ParseError::InvalidSpecialForm {
+                                form: "define".to_string(),
+                                reason: "function body cannot be empty".to_string(),
+                                line: 0,
+                                column: 0,
+                                suggestion: Some("Add at least one expression as the function body".to_string()),
+                            });
+                        }
 
                         // Create a lambda expression as the value
                         let lambda_expr = crate::ast::LambdaExpr {
                             params,
-                            body: vec![body_expr],
-                            docstring: None,
+                            body,
+                            docstring: docstring.clone(),
                         };
 
                         Ok(crate::ast::DefineExpr {
                             name,
                             value: Expr::Lambda(Box::new(lambda_expr)),
-                            docstring: None,
+                            docstring,
                         })
                     }
                     _ => {
@@ -586,13 +628,8 @@ impl Parser {
 
         self.expect_token(Token::RightParen)?;
 
-        let mut body = Vec::new();
-        while let Some(token_info) = self.current_token() {
-            if matches!(token_info.token, Token::RightParen) {
-                break;
-            }
-            body.push(self.parse_expr()?);
-        }
+        // Parse docstring and lambda body
+        let (docstring, body) = self.parse_docstring_and_body()?;
 
         if body.is_empty() {
             return Err(ParseError::invalid_special_form(
@@ -604,7 +641,7 @@ impl Parser {
             ));
         }
 
-        Ok(crate::ast::LambdaExpr { params, body, docstring: None })
+        Ok(crate::ast::LambdaExpr { params, body, docstring })
     }
 
     fn parse_if(&mut self) -> Result<crate::ast::IfExpr, ParseError> {
