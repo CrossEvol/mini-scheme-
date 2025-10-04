@@ -10,6 +10,7 @@ pub enum Value {
     Number(f64),
     Boolean(bool),
     Nil,
+    Unspecified,
     Object(Rc<RefCell<Object>>),
     MultipleValues,
 }
@@ -202,6 +203,11 @@ impl Value {
         }))))
     }
 
+    /// Create a new unspecified value
+    pub fn unspecified() -> Self {
+        Value::Unspecified
+    }
+
     // Type checking methods
 
     /// Check if this value is a number
@@ -217,6 +223,11 @@ impl Value {
     /// Check if this value is nil
     pub fn is_nil(&self) -> bool {
         matches!(self, Value::Nil)
+    }
+
+    /// Check if this value is unspecified
+    pub fn is_unspecified(&self) -> bool {
+        matches!(self, Value::Unspecified)
     }
 
     /// Check if this value is a string
@@ -408,6 +419,29 @@ impl Value {
     pub fn is_multiple_values(&self) -> bool {
         matches!(self, Value::MultipleValues)
     }
+
+    /// Get the type name of this value for error messages
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Number(_) => "number",
+            Value::Boolean(_) => "boolean",
+            Value::Nil => "nil",
+            Value::Unspecified => "unspecified value",
+            Value::MultipleValues => "multiple values",
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::String(_) => "string",
+                Object::Character(_) => "character",
+                Object::Symbol(_) => "symbol",
+                Object::Cons(_) => "pair",
+                Object::Vector(_) => "vector",
+                Object::Hashtable(_) => "hashtable",
+                Object::Function(_) => "procedure",
+                Object::Closure(_) => "procedure",
+                Object::Builtin(_) => "procedure",
+                Object::Upvalue(_) => "upvalue",
+            },
+        }
+    }
 }
 
 impl PartialEq for Value {
@@ -417,6 +451,7 @@ impl PartialEq for Value {
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
+            (Value::Unspecified, Value::Unspecified) => true,
             (Value::MultipleValues, Value::MultipleValues) => true,
             (Value::Object(a), Value::Object(b)) => {
                 // First check by reference (address)
@@ -453,6 +488,7 @@ impl fmt::Display for Value {
             Value::Boolean(true) => write!(f, "#t"),
             Value::Boolean(false) => write!(f, "#f"),
             Value::Nil => write!(f, "()"),
+            Value::Unspecified => write!(f, "#<unspecified>"),
             Value::MultipleValues => write!(f, "#<multiple-values>"),
             Value::Object(obj) => match &*obj.borrow() {
                 Object::String(s) => write!(f, "\"{}\"", s),
@@ -519,6 +555,7 @@ impl Value {
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
+            (Value::Unspecified, Value::Unspecified) => true,
             (Value::MultipleValues, Value::MultipleValues) => true,
             (Value::Object(a), Value::Object(b)) => {
                 match (&*a.borrow(), &*b.borrow()) {
@@ -695,5 +732,65 @@ mod tests {
         // Test closed upvalue creation
         let closed_upvalue = Upvalue::new_closed(Value::string("test".to_string()));
         assert!(closed_upvalue.is_closed());
+    }
+
+    #[test]
+    fn test_unspecified_value_creation() {
+        let unspecified = Value::unspecified();
+        assert!(unspecified.is_unspecified());
+        assert!(!unspecified.is_nil());
+        assert!(!unspecified.is_number());
+        assert!(!unspecified.is_boolean());
+        assert!(!unspecified.is_multiple_values());
+    }
+
+    #[test]
+    fn test_unspecified_equality() {
+        let unspecified1 = Value::Unspecified;
+        let unspecified2 = Value::Unspecified;
+        assert_eq!(unspecified1, unspecified2);
+        assert!(unspecified1.eq(&unspecified2));
+        assert!(unspecified1.equal(&unspecified2));
+        
+        // Test inequality with other types
+        assert_ne!(unspecified1, Value::Nil);
+        assert_ne!(unspecified1, Value::Number(0.0));
+        assert_ne!(unspecified1, Value::Boolean(false));
+        assert_ne!(unspecified1, Value::MultipleValues);
+    }
+
+    #[test]
+    fn test_unspecified_display() {
+        let unspecified = Value::Unspecified;
+        assert_eq!(format!("{}", unspecified), "#<unspecified>");
+    }
+
+    #[test]
+    fn test_unspecified_type_name() {
+        let unspecified = Value::Unspecified;
+        assert_eq!(unspecified.type_name(), "unspecified value");
+    }
+
+    #[test]
+    fn test_unspecified_truthiness() {
+        let unspecified = Value::Unspecified;
+        assert!(unspecified.is_truthy());
+        assert!(!unspecified.is_falsy());
+    }
+
+    #[test]
+    fn test_type_names() {
+        assert_eq!(Value::Number(42.0).type_name(), "number");
+        assert_eq!(Value::Boolean(true).type_name(), "boolean");
+        assert_eq!(Value::Nil.type_name(), "nil");
+        assert_eq!(Value::Unspecified.type_name(), "unspecified value");
+        assert_eq!(Value::MultipleValues.type_name(), "multiple values");
+        assert_eq!(Value::string("test".to_string()).type_name(), "string");
+        assert_eq!(Value::character('a').type_name(), "character");
+        assert_eq!(Value::symbol("test".to_string()).type_name(), "symbol");
+        assert_eq!(Value::cons(Value::Nil, Value::Nil).type_name(), "pair");
+        assert_eq!(Value::vector(vec![]).type_name(), "vector");
+        assert_eq!(Value::hashtable(std::collections::HashMap::new()).type_name(), "hashtable");
+        assert_eq!(Value::builtin("test".to_string(), 0).type_name(), "procedure");
     }
 }

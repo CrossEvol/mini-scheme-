@@ -334,6 +334,7 @@ impl VM {
             Value::Number(n) => print!("{}", n),
             Value::Boolean(b) => print!("{}", if *b { "#t" } else { "#f" }),
             Value::Nil => print!("nil"),
+            Value::Unspecified => print!("#<unspecified>"),
             Value::MultipleValues => print!("#<multiple-values>"),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
@@ -1563,6 +1564,7 @@ impl VM {
                 }
             }
             Value::Nil => "nil".to_string(),
+            Value::Unspecified => "#<unspecified>".to_string(),
             Value::MultipleValues => "#<multiple-values>".to_string(),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
@@ -2972,6 +2974,7 @@ impl VM {
                 }
             }
             Value::Nil => 0,
+            Value::Unspecified => 999, // Arbitrary hash for unspecified values
             Value::MultipleValues => 42, // Arbitrary hash for multiple values
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
@@ -3414,6 +3417,7 @@ impl VM {
             Value::Number(_) => "number".to_string(),
             Value::Boolean(_) => "boolean".to_string(),
             Value::Nil => "nil".to_string(),
+            Value::Unspecified => "unspecified value".to_string(),
             Value::MultipleValues => "multiple-values".to_string(),
             Value::Object(obj) => {
                 if let Ok(obj_ref) = obj.try_borrow() {
