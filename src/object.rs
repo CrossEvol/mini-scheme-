@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::fmt;
 use crate::bytecode::Chunk;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt;
+use std::rc::Rc;
 
 /// The fundamental Value type that represents all Scheme values
 #[derive(Debug, Clone)]
@@ -68,11 +68,9 @@ pub struct Upvalue {
 /// Location of an upvalue - either on the stack (open) or closed on the heap
 #[derive(Debug, Clone)]
 pub enum UpvalueLocation {
-    Stack(usize),      // Points to stack slot (open upvalue)
-    Closed(Value),     // Contains the closed value (closed upvalue)
+    Stack(usize),  // Points to stack slot (open upvalue)
+    Closed(Value), // Contains the closed value (closed upvalue)
 }
-
-
 
 impl Cons {
     /// Create a new cons cell
@@ -198,13 +196,14 @@ impl Value {
 
     /// Create a new built-in function value
     pub fn builtin(name: String, arity: usize) -> Self {
-        Value::Object(Rc::new(RefCell::new(Object::Builtin(BuiltinFunction { name, arity }))))
+        Value::Object(Rc::new(RefCell::new(Object::Builtin(BuiltinFunction {
+            name,
+            arity,
+        }))))
     }
 
-
-
     // Type checking methods
-    
+
     /// Check if this value is a number
     pub fn is_number(&self) -> bool {
         matches!(self, Value::Number(_))
@@ -297,8 +296,6 @@ impl Value {
         self.is_function() || self.is_closure() || self.is_builtin()
     }
 
-
-
     // Safe value extraction methods
 
     /// Extract number value, returns None if not a number
@@ -320,12 +317,10 @@ impl Value {
     /// Extract string value, returns None if not a string
     pub fn as_string(&self) -> Option<String> {
         match self {
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::String(s) => Some(s.clone()),
-                    _ => None,
-                }
-            }
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::String(s) => Some(s.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -333,12 +328,10 @@ impl Value {
     /// Extract character value, returns None if not a character
     pub fn as_character(&self) -> Option<char> {
         match self {
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::Character(c) => Some(*c),
-                    _ => None,
-                }
-            }
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::Character(c) => Some(*c),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -346,12 +339,10 @@ impl Value {
     /// Extract symbol value, returns None if not a symbol
     pub fn as_symbol(&self) -> Option<String> {
         match self {
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::Symbol(s) => Some(s.clone()),
-                    _ => None,
-                }
-            }
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::Symbol(s) => Some(s.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -359,12 +350,10 @@ impl Value {
     /// Extract cons cell, returns None if not a cons
     pub fn as_cons(&self) -> Option<Cons> {
         match self {
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::Cons(cons) => Some(cons.clone()),
-                    _ => None,
-                }
-            }
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::Cons(cons) => Some(cons.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -372,12 +361,10 @@ impl Value {
     /// Extract vector, returns None if not a vector
     pub fn as_vector(&self) -> Option<Vec<Value>> {
         match self {
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::Vector(vec) => Some(vec.clone()),
-                    _ => None,
-                }
-            }
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::Vector(vec) => Some(vec.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -385,12 +372,10 @@ impl Value {
     /// Extract hashtable, returns None if not a hashtable
     pub fn as_hashtable(&self) -> Option<HashMap<String, Value>> {
         match self {
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::Hashtable(map) => Some(map.clone()),
-                    _ => None,
-                }
-            }
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::Hashtable(map) => Some(map.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -398,17 +383,13 @@ impl Value {
     /// Extract built-in function, returns None if not a built-in
     pub fn as_builtin(&self) -> Option<BuiltinFunction> {
         match self {
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::Builtin(builtin) => Some(builtin.clone()),
-                    _ => None,
-                }
-            }
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::Builtin(builtin) => Some(builtin.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
-
-
 
     /// Check if this value is truthy (everything except #f is truthy in Scheme)
     pub fn is_truthy(&self) -> bool {
@@ -442,7 +423,7 @@ impl PartialEq for Value {
                 if Rc::ptr_eq(a, b) {
                     return true;
                 }
-                
+
                 // For characters and symbols, fall back to value comparison
                 match (&*a.borrow(), &*b.borrow()) {
                     (Object::Character(c1), Object::Character(c2)) => c1 == c2,
@@ -473,31 +454,31 @@ impl fmt::Display for Value {
             Value::Boolean(false) => write!(f, "#f"),
             Value::Nil => write!(f, "()"),
             Value::MultipleValues => write!(f, "#<multiple-values>"),
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::String(s) => write!(f, "\"{}\"", s),
-                    Object::Character(c) => write!(f, "#\\{}", c),
-                    Object::Symbol(s) => write!(f, "{}", s),
-                    Object::Cons(cons) => {
-                        write!(f, "(")?;
-                        self.display_list(f, cons)?;
-                        write!(f, ")")
-                    }
-                    Object::Vector(vec) => {
-                        write!(f, "#(")?;
-                        for (i, val) in vec.iter().enumerate() {
-                            if i > 0 { write!(f, " ")?; }
-                            write!(f, "{}", val)?;
-                        }
-                        write!(f, ")")
-                    }
-                    Object::Hashtable(_) => write!(f, "#<hashtable>"),
-                    Object::Function(_func) => write!(f, "#<procedure>"),
-                    Object::Closure(_closure) => write!(f, "#<procedure>"),
-                    Object::Builtin(_builtin) => write!(f, "#<procedure>"),
-                    Object::Upvalue(_) => write!(f, "#<upvalue>"),
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::String(s) => write!(f, "\"{}\"", s),
+                Object::Character(c) => write!(f, "#\\{}", c),
+                Object::Symbol(s) => write!(f, "{}", s),
+                Object::Cons(cons) => {
+                    write!(f, "(")?;
+                    self.display_list(f, cons)?;
+                    write!(f, ")")
                 }
-            }
+                Object::Vector(vec) => {
+                    write!(f, "#(")?;
+                    for (i, val) in vec.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, " ")?;
+                        }
+                        write!(f, "{}", val)?;
+                    }
+                    write!(f, ")")
+                }
+                Object::Hashtable(_) => write!(f, "#<hashtable>"),
+                Object::Function(_func) => write!(f, "#<procedure>"),
+                Object::Closure(_closure) => write!(f, "#<procedure>"),
+                Object::Builtin(_builtin) => write!(f, "#<procedure>"),
+                Object::Upvalue(_) => write!(f, "#<upvalue>"),
+            },
         }
     }
 }
@@ -506,20 +487,18 @@ impl Value {
     /// Helper method to display lists properly
     fn display_list(&self, f: &mut fmt::Formatter<'_>, cons: &Cons) -> fmt::Result {
         write!(f, "{}", cons.car)?;
-        
+
         match &cons.cdr {
             Value::Nil => Ok(()),
-            Value::Object(obj) => {
-                match &*obj.borrow() {
-                    Object::Cons(next_cons) => {
-                        write!(f, " ")?;
-                        self.display_list(f, next_cons)
-                    }
-                    _ => {
-                        write!(f, " . {}", cons.cdr)
-                    }
+            Value::Object(obj) => match &*obj.borrow() {
+                Object::Cons(next_cons) => {
+                    write!(f, " ")?;
+                    self.display_list(f, next_cons)
                 }
-            }
+                _ => {
+                    write!(f, " . {}", cons.cdr)
+                }
+            },
             _ => {
                 write!(f, " . {}", cons.cdr)
             }
@@ -550,8 +529,7 @@ impl Value {
                         cons1.car.equal(&cons2.car) && cons1.cdr.equal(&cons2.cdr)
                     }
                     (Object::Vector(v1), Object::Vector(v2)) => {
-                        v1.len() == v2.len() && 
-                        v1.iter().zip(v2.iter()).all(|(a, b)| a.equal(b))
+                        v1.len() == v2.len() && v1.iter().zip(v2.iter()).all(|(a, b)| a.equal(b))
                     }
                     _ => Rc::ptr_eq(a, b), // For other objects, fall back to reference equality
                 }
@@ -622,7 +600,7 @@ mod tests {
         let cons_val = Value::cons(car.clone(), cdr.clone());
 
         assert!(cons_val.is_cons());
-        
+
         let extracted_cons = cons_val.as_cons().unwrap();
         assert_eq!(extracted_cons.car, car);
         assert_eq!(extracted_cons.cdr, cdr);
@@ -642,7 +620,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("key1".to_string(), Value::Number(1.0));
         map.insert("key2".to_string(), Value::string("value".to_string()));
-        
+
         let hash_val = Value::hashtable(map.clone());
         assert!(hash_val.is_hashtable());
         assert_eq!(hash_val.as_hashtable(), Some(map));

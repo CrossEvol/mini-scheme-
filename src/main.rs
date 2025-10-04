@@ -353,6 +353,8 @@ fn process_input_with_config_result(
                     } else {
                         println!("{}", result);
                     }
+                } else {
+                    println!("{}", result);
                 }
             })?;
     }
@@ -510,6 +512,8 @@ fn process_input_with_repl_vm_result(
                     } else {
                         println!("{}", result);
                     }
+                } else {
+                    println!("{}", result);
                 }
             })?;
     }
