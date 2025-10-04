@@ -533,8 +533,9 @@ impl Compiler {
         let name_constant = self.add_constant(Value::string(name.to_string()))?;
         self.emit_bytes(OpCode::OP_DEFINE_GLOBAL, name_constant as u8, 1);
 
-        // Push nil to indicate no return value (define produces no output)
-        self.emit_byte(OpCode::OP_NIL, 1);
+        // Push unspecified value to indicate no return value (define produces no output)
+        let unspecified_constant = self.add_constant(Value::unspecified())?;
+        self.emit_bytes(OpCode::OP_CONSTANT, unspecified_constant as u8, 1);
 
         Ok(())
     }
@@ -1552,6 +1553,10 @@ impl Compiler {
             &Expr::If(Box::new(if_expr.clone())),
         );
 
+        // Check if this is an if expression without an else clause
+        // (parser sets else_expr to Expr::Boolean(false) in this case)
+        let has_else_clause = !matches!(if_expr.else_expr, Expr::Boolean(false));
+
         // Compile the condition
         self.compile_expr(&if_expr.condition)?;
 
@@ -1562,18 +1567,34 @@ impl Compiler {
         self.emit_byte(OpCode::OP_POP, 1); // Pop the condition value
         self.compile_expr(&if_expr.then_expr)?;
 
-        // Jump over else branch
-        let end_jump = self.emit_jump(OpCode::OP_JUMP)?;
+        if has_else_clause {
+            // Jump over else branch
+            let end_jump = self.emit_jump(OpCode::OP_JUMP)?;
 
-        // Patch the else jump to point here
-        self.patch_jump(else_jump)?;
+            // Patch the else jump to point here
+            self.patch_jump(else_jump)?;
 
-        // Compile else branch
-        self.emit_byte(OpCode::OP_POP, 1); // Pop the condition value
-        self.compile_expr(&if_expr.else_expr)?;
+            // Compile else branch
+            self.emit_byte(OpCode::OP_POP, 1); // Pop the condition value
+            self.compile_expr(&if_expr.else_expr)?;
 
-        // Patch the end jump to point here
-        self.patch_jump(end_jump)?;
+            // Patch the end jump to point here
+            self.patch_jump(end_jump)?;
+        } else {
+            // No else clause - return unspecified value when condition is false
+            let end_jump = self.emit_jump(OpCode::OP_JUMP)?;
+
+            // Patch the else jump to point here
+            self.patch_jump(else_jump)?;
+
+            // Pop the condition value and push unspecified
+            self.emit_byte(OpCode::OP_POP, 1);
+            let unspecified_constant = self.add_constant(Value::unspecified())?;
+            self.emit_bytes(OpCode::OP_CONSTANT, unspecified_constant as u8, 1);
+
+            // Patch the end jump to point here
+            self.patch_jump(end_jump)?;
+        }
 
         Ok(())
     }
@@ -2035,18 +2056,18 @@ impl Compiler {
         // Try to resolve as local variable first
         if let Some(local_index) = self.resolve_local(&set_expr.variable) {
             self.emit_bytes(OpCode::OP_SET_LOCAL, local_index as u8, 1);
-            return Ok(());
-        }
-
-        // Try to resolve as upvalue
-        if let Some(upvalue_index) = self.resolve_upvalue(&set_expr.variable) {
+        } else if let Some(upvalue_index) = self.resolve_upvalue(&set_expr.variable) {
+            // Try to resolve as upvalue
             self.emit_bytes(OpCode::OP_SET_UPVALUE, upvalue_index as u8, 1);
-            return Ok(());
+        } else {
+            // Fall back to global variable
+            let name_constant = self.add_constant(Value::string(set_expr.variable.clone()))?;
+            self.emit_bytes(OpCode::OP_SET_GLOBAL, name_constant as u8, 1);
         }
 
-        // Fall back to global variable
-        let name_constant = self.add_constant(Value::string(set_expr.variable.clone()))?;
-        self.emit_bytes(OpCode::OP_SET_GLOBAL, name_constant as u8, 1);
+        // Return unspecified value for set! expressions
+        let unspecified_constant = self.add_constant(Value::unspecified())?;
+        self.emit_bytes(OpCode::OP_CONSTANT, unspecified_constant as u8, 1);
         Ok(())
     }
 
@@ -2215,8 +2236,9 @@ impl Compiler {
         self.trace("Compiling import expression");
 
         // For now, imports are not implemented in the runtime
-        // Just return nil
-        self.emit_byte(OpCode::OP_NIL, 1);
+        // Return unspecified value for import statements
+        let unspecified_constant = self.add_constant(Value::unspecified())?;
+        self.emit_bytes(OpCode::OP_CONSTANT, unspecified_constant as u8, 1);
         Ok(())
     }
 

@@ -1,6 +1,8 @@
 # Implementation Plan
 
-- [-] 1. Extend the object system with unspecified value support
+- [x] 1. Extend the object system with unspecified value support
+
+
 
 
 
@@ -18,7 +20,7 @@
   - Verify type name reporting for error messages
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 2. Update compiler to generate unspecified values for side-effect expressions
+- [x] 2. Update compiler to generate unspecified values for side-effect expressions
   - Modify `compile_define()` method to return unspecified values instead of nil
   - Update `compile_set()` method to return unspecified values for assignments
   - Modify `compile_if()` to return unspecified values when no else clause and condition is false
