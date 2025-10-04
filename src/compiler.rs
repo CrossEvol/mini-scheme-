@@ -808,7 +808,7 @@ impl Compiler {
         ));
 
         // Check for built-in functions
-        if let Expr::Variable(func_name, None) = func_expr {
+        if let Expr::Variable(func_name, _) = func_expr {
             match func_name.as_str() {
                 "cons" => {
                     if args.len() != 2 {
