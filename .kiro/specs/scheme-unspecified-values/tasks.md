@@ -34,7 +34,18 @@
   - Test that import expressions compile to return unspecified values
   - _Requirements: 1.1, 1.2, 1.3, 1.6, 7.1, 7.2, 7.3_
 
-- [ ] 3. Update VM built-in functions to return unspecified values
+- [x] 3. Update VM built-in functions to return unspecified values
+
+
+
+
+
+
+
+
+
+
+
   - Modify `display` built-in function to return unspecified value after output
   - Update `newline` built-in function to return unspecified value after output
   - Modify `write` built-in function to return unspecified value after output

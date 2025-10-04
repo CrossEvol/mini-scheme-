@@ -211,6 +211,20 @@ impl VM {
             "values".to_string(),
             Value::builtin("values".to_string(), 0), // 0 indicates variadic
         );
+
+        // Add I/O functions
+        self.globals.insert(
+            "display".to_string(),
+            Value::builtin("display".to_string(), 1),
+        );
+        self.globals.insert(
+            "write".to_string(),
+            Value::builtin("write".to_string(), 1),
+        );
+        self.globals.insert(
+            "newline".to_string(),
+            Value::builtin("newline".to_string(), 0),
+        );
     }
 
     /// Reset the VM to initial state
@@ -1734,6 +1748,7 @@ impl VM {
         // Execute the built-in function (this may push a result to the stack)
         match name {
             "display" => self.builtin_display(arg_count),
+            "write" => self.builtin_write(arg_count),
             "newline" => self.builtin_newline(arg_count),
             "error" => self.builtin_error(arg_count),
             "for-each" => self.builtin_for_each(arg_count),
@@ -1824,8 +1839,8 @@ impl VM {
         // Mark that output was produced (for REPL formatting)
         self.output_produced = true;
 
-        // display returns unspecified value (we'll use nil)
-        self.push(Value::Nil)?;
+        // display returns unspecified value
+        self.push(Value::Unspecified)?;
         Ok(())
     }
 
@@ -1844,8 +1859,11 @@ impl VM {
         // Ensure output is flushed immediately
         let _ = io::stdout().flush();
 
-        // newline returns unspecified value (we'll use nil)
-        self.push(Value::Nil)?;
+        // Mark that output was produced (for REPL formatting)
+        self.output_produced = true;
+
+        // newline returns unspecified value
+        self.push(Value::Unspecified)?;
         Ok(())
     }
 
@@ -1897,6 +1915,32 @@ impl VM {
             procedure: proc_str,
             message: msg_str,
         })
+    }
+
+    /// Implement the write built-in function
+    fn builtin_write(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count != 1 {
+            return Err(RuntimeError::ArityMismatch {
+                expected: 1,
+                got: arg_count,
+            });
+        }
+
+        // Get the argument to write
+        let value = self.pop()?;
+
+        // Write the value in readable format (with quotes for strings)
+        print!("{}", value);
+
+        // Ensure output is flushed immediately
+        let _ = io::stdout().flush();
+
+        // Mark that output was produced (for REPL formatting)
+        self.output_produced = true;
+
+        // write returns unspecified value
+        self.push(Value::Unspecified)?;
+        Ok(())
     }
 
     /// Implement the for-each built-in function
@@ -3473,6 +3517,9 @@ mod tests {
         assert!(vm.globals.contains_key("equal-hash"));
         assert!(vm.globals.contains_key("string=?"));
         assert!(vm.globals.contains_key("equal?"));
+        assert!(vm.globals.contains_key("display"));
+        assert!(vm.globals.contains_key("write"));
+        assert!(vm.globals.contains_key("newline"));
         assert!(!vm.trace_execution);
     }
 
