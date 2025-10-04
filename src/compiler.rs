@@ -1719,6 +1719,7 @@ impl Compiler {
         let lambda_expr = LambdaExpr {
             params: param_names.clone(),
             body: let_loop.body.clone(),
+            docstring: None,
         };
 
         // Define the function as a global variable so it can reference itself
@@ -2024,12 +2025,14 @@ impl Compiler {
             let producer = LambdaExpr {
                 params: vec![],
                 body: vec![producer_expr.clone()],
+                docstring: None,
             };
             
             // Create consumer lambda: (lambda (vars...) result_expr)
             let consumer = LambdaExpr {
                 params: vars.clone(),
                 body: vec![result_expr.clone()],
+                docstring: None,
             };
             
             // Create call-with-values expression
@@ -2636,13 +2639,14 @@ mod tests {
         assert_eq!(code[2], OpCode::OP_DEFINE_GLOBAL.to_byte()); // Define instruction
         assert_eq!(code[3], 1); // Variable name constant index
 
-        // Should have two constants: the value and the variable name
-        assert_eq!(compiler.function.chunk.constants.len(), 2);
+        // Should have three constants: the value, the variable name, and unspecified
+        assert_eq!(compiler.function.chunk.constants.len(), 3);
         assert_eq!(compiler.function.chunk.constants[0], Value::Number(42.0));
         assert_eq!(
             compiler.function.chunk.constants[1].as_string().unwrap(),
             "x"
         );
+        assert!(compiler.function.chunk.constants[2].is_unspecified());
     }
 
     #[test]
@@ -2687,6 +2691,7 @@ mod tests {
         let lambda = LambdaExpr {
             params: vec!["x".to_string()],
             body: vec![Expr::Variable("x".to_string())],
+            docstring: None,
         };
 
         compiler.compile_lambda(&lambda).unwrap();
@@ -2737,6 +2742,7 @@ mod tests {
         let define = DefineExpr {
             name: "x".to_string(),
             value: Expr::Number(42.0),
+            docstring: None,
         };
 
         compiler.compile_define(&define).unwrap();
@@ -2763,6 +2769,7 @@ mod tests {
         let define = DefineExpr {
             name: "x".to_string(),
             value: Expr::Number(42.0),
+            docstring: None,
         };
 
         compiler.compile_define(&define).unwrap();
@@ -2888,6 +2895,7 @@ mod tests {
                 Box::new(Expr::Variable("values".to_string())),
                 vec![Expr::Number(1.0), Expr::Number(2.0)],
             )],
+            docstring: None,
         }));
 
         let consumer = Expr::Lambda(Box::new(LambdaExpr {
@@ -2899,6 +2907,7 @@ mod tests {
                     Expr::Variable("y".to_string()),
                 ],
             )],
+            docstring: None,
         }));
 
         let call_with_values = CallWithValuesExpr { producer, consumer };

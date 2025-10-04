@@ -460,7 +460,7 @@ impl Parser {
                         let name = name.clone();
                         self.advance();
                         let value = self.parse_expr()?;
-                        Ok(crate::ast::DefineExpr { name, value })
+                        Ok(crate::ast::DefineExpr { name, value, docstring: None })
                     }
                     Token::LeftParen => {
                         // Function definition: (define (name args...) body...)
@@ -527,11 +527,13 @@ impl Parser {
                         let lambda_expr = crate::ast::LambdaExpr {
                             params,
                             body: vec![body_expr],
+                            docstring: None,
                         };
 
                         Ok(crate::ast::DefineExpr {
                             name,
                             value: Expr::Lambda(Box::new(lambda_expr)),
+                            docstring: None,
                         })
                     }
                     _ => {
@@ -602,7 +604,7 @@ impl Parser {
             ));
         }
 
-        Ok(crate::ast::LambdaExpr { params, body })
+        Ok(crate::ast::LambdaExpr { params, body, docstring: None })
     }
 
     fn parse_if(&mut self) -> Result<crate::ast::IfExpr, ParseError> {

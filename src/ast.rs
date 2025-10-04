@@ -43,6 +43,7 @@ pub enum Expr {
 pub struct DefineExpr {
     pub name: String,
     pub value: Expr,
+    pub docstring: Option<String>,
 }
 
 /// Lambda expression: (lambda (args...) body...)
@@ -50,6 +51,7 @@ pub struct DefineExpr {
 pub struct LambdaExpr {
     pub params: Vec<String>,
     pub body: Vec<Expr>,
+    pub docstring: Option<String>,
 }
 
 /// If expression: (if condition then else)
@@ -120,4 +122,44 @@ pub struct ImportExpr {
 pub struct SetExpr {
     pub variable: String,
     pub value: Expr,
+}
+
+impl DefineExpr {
+    /// Create a new DefineExpr without a docstring
+    pub fn new(name: String, value: Expr) -> Self {
+        Self {
+            name,
+            value,
+            docstring: None,
+        }
+    }
+    
+    /// Create a new DefineExpr with a docstring
+    pub fn new_with_docstring(name: String, value: Expr, docstring: String) -> Self {
+        Self {
+            name,
+            value,
+            docstring: Some(docstring),
+        }
+    }
+}
+
+impl LambdaExpr {
+    /// Create a new LambdaExpr without a docstring
+    pub fn new(params: Vec<String>, body: Vec<Expr>) -> Self {
+        Self {
+            params,
+            body,
+            docstring: None,
+        }
+    }
+    
+    /// Create a new LambdaExpr with a docstring
+    pub fn new_with_docstring(params: Vec<String>, body: Vec<Expr>, docstring: String) -> Self {
+        Self {
+            params,
+            body,
+            docstring: Some(docstring),
+        }
+    }
 }

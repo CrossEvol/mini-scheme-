@@ -1,6 +1,11 @@
 # Implementation Plan
 
-- [ ] 1. Extend AST structures to support docstrings
+- [x] 1. Extend AST structures to support docstrings
+
+
+
+
+
   - Add `docstring: Option<String>` field to `DefineExpr` struct in `src/ast.rs`
   - Add `docstring: Option<String>` field to `LambdaExpr` struct in `src/ast.rs`
   - Update struct constructors to handle the new docstring field
