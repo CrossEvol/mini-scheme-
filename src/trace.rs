@@ -771,11 +771,11 @@ impl Tracer {
 /// Helper function to format an AST expression for tracing
 pub fn format_ast_expr(expr: &Expr) -> String {
     match expr {
-        Expr::Number(n) => format!("Number({})", n),
-        Expr::String(s) => format!("String(\"{}\")", s),
-        Expr::Character(c) => format!("Character(#\\{})", c),
-        Expr::Boolean(b) => format!("Boolean({})", if *b { "#t" } else { "#f" }),
-        Expr::Variable(name) => format!("Variable(\"{}\")", name),
+        Expr::Number(n, _) => format!("Number({})", n),
+        Expr::String(s, _) => format!("String(\"{}\")", s),
+        Expr::Character(c, _) => format!("Character(#\\{})", c),
+        Expr::Boolean(b, _) => format!("Boolean({})", if *b { "#t" } else { "#f" }),
+        Expr::Variable(name, _) => format!("Variable(\"{}\")", name),
         Expr::Lambda(lambda) => format!("Lambda(params=[{}], body=...)", lambda.params.join(", ")),
         Expr::Call(func, args) => {
             format!("Call(func={}, args={})", format_ast_expr(func), args.len())
@@ -800,13 +800,15 @@ pub fn format_ast_expr(expr: &Expr) -> String {
         }
         Expr::Import(_) => format!("Import(module=...)"),
         Expr::Cond(cond_expr) => format!("Cond(clauses={})", cond_expr.clauses.len()),
-        Expr::Begin(exprs) => format!("Begin(exprs={})", exprs.len()),
+        Expr::Begin(exprs) => format!("Begin(exprs={})", exprs.body.len()),
         Expr::Set(set_expr) => format!("Set(variable=\"{}\", value=...)", set_expr.variable),
-        Expr::Quote(quoted) => format!("Quote({})", format_ast_expr(quoted)),
-        Expr::QuasiQuote(quasi) => format!("QuasiQuote({})", format_ast_expr(quasi)),
-        Expr::UnQuote(unquoted) => format!("UnQuote({})", format_ast_expr(unquoted)),
-        Expr::UnQuoteSplicing(spliced) => format!("UnQuoteSplicing({})", format_ast_expr(spliced)),
-        Expr::List(exprs) => format!("List({})", exprs.len()),
-        Expr::Vector(exprs) => format!("Vector({})", exprs.len()),
+        Expr::Quote(quoted, _) => format!("Quote({})", format_ast_expr(quoted)),
+        Expr::QuasiQuote(quasi, _) => format!("QuasiQuote({})", format_ast_expr(quasi)),
+        Expr::UnQuote(unquoted, _) => format!("UnQuote({})", format_ast_expr(unquoted)),
+        Expr::UnQuoteSplicing(spliced, _) => {
+            format!("UnQuoteSplicing({})", format_ast_expr(spliced))
+        }
+        Expr::List(exprs, _) => format!("List({})", exprs.len()),
+        Expr::Vector(exprs, _) => format!("Vector({})", exprs.len()),
     }
 }

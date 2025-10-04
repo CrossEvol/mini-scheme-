@@ -125,71 +125,74 @@ impl Parser {
 
         self.advance();
 
+        let token = Some(token_info.clone());
         match &token_info.token_type {
-            TokenType::Number(n) => Ok(Expr::Number(*n)),
-            TokenType::String(s) => Ok(Expr::String(s.clone())),
-            TokenType::Character(c) => Ok(Expr::Character(*c)),
-            TokenType::Boolean(b) => Ok(Expr::Boolean(*b)),
-            TokenType::Identifier(name) => Ok(Expr::Variable(name.clone())),
-            TokenType::Null => Ok(Expr::Variable("null".to_string())), // null is a symbol
+            TokenType::Number(n) => Ok(Expr::Number(*n, token)),
+            TokenType::String(s) => Ok(Expr::String(s.clone(), token)),
+            TokenType::Character(c) => Ok(Expr::Character(*c, token)),
+            TokenType::Boolean(b) => Ok(Expr::Boolean(*b, token)),
+            TokenType::Identifier(name) => Ok(Expr::Variable(name.clone(), token)),
+            TokenType::Null => Ok(Expr::Variable("null".to_string(), token)), // null is a symbol
 
             // Handle built-in procedures and keywords as variables for now
-            TokenType::Plus => Ok(Expr::Variable("+".to_string())),
-            TokenType::Minus => Ok(Expr::Variable("-".to_string())),
-            TokenType::Multiply => Ok(Expr::Variable("*".to_string())),
-            TokenType::Divide => Ok(Expr::Variable("/".to_string())),
-            TokenType::Equal => Ok(Expr::Variable("=".to_string())),
-            TokenType::LessThan => Ok(Expr::Variable("<".to_string())),
-            TokenType::LessThanEqual => Ok(Expr::Variable("<=".to_string())),
-            TokenType::GreaterThan => Ok(Expr::Variable(">".to_string())),
-            TokenType::GreaterThanEqual => Ok(Expr::Variable(">=".to_string())),
+            TokenType::Plus => Ok(Expr::Variable("+".to_string(), token)),
+            TokenType::Minus => Ok(Expr::Variable("-".to_string(), token)),
+            TokenType::Multiply => Ok(Expr::Variable("*".to_string(), token)),
+            TokenType::Divide => Ok(Expr::Variable("/".to_string(), token)),
+            TokenType::Equal => Ok(Expr::Variable("=".to_string(), token)),
+            TokenType::LessThan => Ok(Expr::Variable("<".to_string(), token)),
+            TokenType::LessThanEqual => Ok(Expr::Variable("<=".to_string(), token)),
+            TokenType::GreaterThan => Ok(Expr::Variable(">".to_string(), token)),
+            TokenType::GreaterThanEqual => Ok(Expr::Variable(">=".to_string(), token)),
 
             // Built-in procedures
-            TokenType::Car => Ok(Expr::Variable("car".to_string())),
-            TokenType::Cdr => Ok(Expr::Variable("cdr".to_string())),
-            TokenType::Cons => Ok(Expr::Variable("cons".to_string())),
-            TokenType::List => Ok(Expr::Variable("list".to_string())),
-            TokenType::Vector => Ok(Expr::Variable("vector".to_string())),
-            TokenType::Display => Ok(Expr::Variable("display".to_string())),
-            TokenType::Newline => Ok(Expr::Variable("newline".to_string())),
-            TokenType::Error => Ok(Expr::Variable("error".to_string())),
-            TokenType::Values => Ok(Expr::Variable("values".to_string())),
-            TokenType::ForEach => Ok(Expr::Variable("for-each".to_string())),
+            TokenType::Car => Ok(Expr::Variable("car".to_string(), token)),
+            TokenType::Cdr => Ok(Expr::Variable("cdr".to_string(), token)),
+            TokenType::Cons => Ok(Expr::Variable("cons".to_string(), token)),
+            TokenType::List => Ok(Expr::Variable("list".to_string(), token)),
+            TokenType::Vector => Ok(Expr::Variable("vector".to_string(), token)),
+            TokenType::Display => Ok(Expr::Variable("display".to_string(), token)),
+            TokenType::Newline => Ok(Expr::Variable("newline".to_string(), token)),
+            TokenType::Error => Ok(Expr::Variable("error".to_string(), token)),
+            TokenType::Values => Ok(Expr::Variable("values".to_string(), token)),
+            TokenType::ForEach => Ok(Expr::Variable("for-each".to_string(), token)),
 
             // Predicates
-            TokenType::HashtableQ => Ok(Expr::Variable("hashtable?".to_string())),
-            TokenType::StringQ => Ok(Expr::Variable("string?".to_string())),
-            TokenType::NumberQ => Ok(Expr::Variable("number?".to_string())),
-            TokenType::BooleanQ => Ok(Expr::Variable("boolean?".to_string())),
-            TokenType::CharQ => Ok(Expr::Variable("char?".to_string())),
-            TokenType::CharNumericQ => Ok(Expr::Variable("char-numeric?".to_string())),
-            TokenType::CharWhitespaceQ => Ok(Expr::Variable("char-whitespace?".to_string())),
-            TokenType::NullQ => Ok(Expr::Variable("null?".to_string())),
-            TokenType::PairQ => Ok(Expr::Variable("pair?".to_string())),
-            TokenType::EqQ => Ok(Expr::Variable("eq?".to_string())),
-            TokenType::CharEqQ => Ok(Expr::Variable("char=?".to_string())),
-            TokenType::StringEqQ => Ok(Expr::Variable("string=?".to_string())),
-            TokenType::EqualQ => Ok(Expr::Variable("equal?".to_string())),
+            TokenType::HashtableQ => Ok(Expr::Variable("hashtable?".to_string(), token)),
+            TokenType::StringQ => Ok(Expr::Variable("string?".to_string(), token)),
+            TokenType::NumberQ => Ok(Expr::Variable("number?".to_string(), token)),
+            TokenType::BooleanQ => Ok(Expr::Variable("boolean?".to_string(), token)),
+            TokenType::CharQ => Ok(Expr::Variable("char?".to_string(), token)),
+            TokenType::CharNumericQ => Ok(Expr::Variable("char-numeric?".to_string(), token)),
+            TokenType::CharWhitespaceQ => Ok(Expr::Variable("char-whitespace?".to_string(), token)),
+            TokenType::NullQ => Ok(Expr::Variable("null?".to_string(), token)),
+            TokenType::PairQ => Ok(Expr::Variable("pair?".to_string(), token)),
+            TokenType::EqQ => Ok(Expr::Variable("eq?".to_string(), token)),
+            TokenType::CharEqQ => Ok(Expr::Variable("char=?".to_string(), token)),
+            TokenType::StringEqQ => Ok(Expr::Variable("string=?".to_string(), token)),
+            TokenType::EqualQ => Ok(Expr::Variable("equal?".to_string(), token)),
 
             // Type conversions
-            TokenType::StringToNumber => Ok(Expr::Variable("string->number".to_string())),
-            TokenType::ListToString => Ok(Expr::Variable("list->string".to_string())),
-            TokenType::ListToVector => Ok(Expr::Variable("list->vector".to_string())),
-            TokenType::VectorToList => Ok(Expr::Variable("vector->list".to_string())),
+            TokenType::StringToNumber => Ok(Expr::Variable("string->number".to_string(), token)),
+            TokenType::ListToString => Ok(Expr::Variable("list->string".to_string(), token)),
+            TokenType::ListToVector => Ok(Expr::Variable("list->vector".to_string(), token)),
+            TokenType::VectorToList => Ok(Expr::Variable("vector->list".to_string(), token)),
 
             // Vector operations
-            TokenType::VectorQ => Ok(Expr::Variable("vector?".to_string())),
-            TokenType::VectorLength => Ok(Expr::Variable("vector-length".to_string())),
-            TokenType::VectorRef => Ok(Expr::Variable("vector-ref".to_string())),
-            TokenType::VectorSet => Ok(Expr::Variable("vector-set!".to_string())),
+            TokenType::VectorQ => Ok(Expr::Variable("vector?".to_string(), token)),
+            TokenType::VectorLength => Ok(Expr::Variable("vector-length".to_string(), token)),
+            TokenType::VectorRef => Ok(Expr::Variable("vector-ref".to_string(), token)),
+            TokenType::VectorSet => Ok(Expr::Variable("vector-set!".to_string(), token)),
 
             // Hashtable operations
-            TokenType::MakeHashtable => Ok(Expr::Variable("make-hashtable".to_string())),
-            TokenType::HashtableSet => Ok(Expr::Variable("hashtable-set!".to_string())),
-            TokenType::HashtableRef => Ok(Expr::Variable("hashtable-ref".to_string())),
-            TokenType::HashtableDelete => Ok(Expr::Variable("hashtable-delete!".to_string())),
-            TokenType::StringHash => Ok(Expr::Variable("string-hash".to_string())),
-            TokenType::EqualHash => Ok(Expr::Variable("equal-hash".to_string())),
+            TokenType::MakeHashtable => Ok(Expr::Variable("make-hashtable".to_string(), token)),
+            TokenType::HashtableSet => Ok(Expr::Variable("hashtable-set!".to_string(), token)),
+            TokenType::HashtableRef => Ok(Expr::Variable("hashtable-ref".to_string(), token)),
+            TokenType::HashtableDelete => {
+                Ok(Expr::Variable("hashtable-delete!".to_string(), token))
+            }
+            TokenType::StringHash => Ok(Expr::Variable("string-hash".to_string(), token)),
+            TokenType::EqualHash => Ok(Expr::Variable("equal-hash".to_string(), token)),
 
             _ => Err(ParseError::UnexpectedToken {
                 expected: "literal value or identifier".to_string(),
@@ -203,6 +206,7 @@ impl Parser {
 
     /// Parse parenthesized expressions (lists and function calls)
     fn parse_list(&mut self) -> Result<Expr, ParseError> {
+        let token = self.current_token_cloned();
         let left_paren = self.current_token().unwrap().clone();
         self.expect_token(TokenType::LeftParen)?;
 
@@ -210,34 +214,39 @@ impl Parser {
         if let Some(token_info) = self.current_token() {
             if matches!(token_info.token_type, TokenType::RightParen) {
                 self.advance();
-                return Ok(Expr::List(vec![]));
+                return Ok(Expr::List(vec![], token));
             }
         }
 
         // Check if this is a special form
         if let Some(token_info) = self.current_token() {
+            let token = self.current_token_cloned();
             match &token_info.token_type {
                 TokenType::Define => {
                     self.advance(); // consume 'define'
-                    let define_expr = self.parse_define()?;
+                    let mut define_expr = self.parse_define()?;
+                    define_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::Define(Box::new(define_expr)));
                 }
                 TokenType::Lambda => {
                     self.advance(); // consume 'lambda'
-                    let lambda_expr = self.parse_lambda()?;
+                    let mut lambda_expr = self.parse_lambda()?;
+                    lambda_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::Lambda(Box::new(lambda_expr)));
                 }
                 TokenType::If => {
                     self.advance(); // consume 'if'
-                    let if_expr = self.parse_if()?;
+                    let mut if_expr = self.parse_if()?;
+                    if_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::If(Box::new(if_expr)));
                 }
                 TokenType::Cond => {
                     self.advance(); // consume 'cond'
-                    let cond_expr = self.parse_cond()?;
+                    let mut cond_expr = self.parse_cond()?;
+                    cond_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::Cond(Box::new(cond_expr)));
                 }
@@ -246,54 +255,62 @@ impl Parser {
                     // Check if this is a named let (let loop)
                     if let Some(token_info) = self.current_token() {
                         if let TokenType::Identifier(_) = &token_info.token_type {
-                            let let_loop_expr = self.parse_let_loop()?;
+                            let mut let_loop_expr = self.parse_let_loop()?;
+                            let_loop_expr.token = token;
                             self.expect_token(TokenType::RightParen)?;
                             return Ok(Expr::LetLoop(Box::new(let_loop_expr)));
                         }
                     }
-                    let let_expr = self.parse_let()?;
+                    let mut let_expr = self.parse_let()?;
+                    let_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::Let(Box::new(let_expr)));
                 }
                 TokenType::LetStar => {
                     self.advance(); // consume 'let*'
-                    let let_star_expr = self.parse_let_star()?;
+                    let mut let_star_expr = self.parse_let_star()?;
+                    let_star_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::LetStar(Box::new(let_star_expr)));
                 }
                 TokenType::LetValues => {
                     self.advance(); // consume 'let-values'
-                    let let_values_expr = self.parse_let_values()?;
+                    let mut let_values_expr = self.parse_let_values()?;
+                    let_values_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::LetValues(Box::new(let_values_expr)));
                 }
                 // Handle call-with-values special form
                 TokenType::CallWithValues => {
                     self.advance(); // consume 'call-with-values'
-                    let call_with_values_expr = self.parse_call_with_values()?;
+                    let mut call_with_values_expr = self.parse_call_with_values()?;
+                    call_with_values_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::CallWithValues(Box::new(call_with_values_expr)));
                 }
                 // Handle import special form
                 TokenType::Import => {
                     self.advance(); // consume 'import'
-                    let import_expr = self.parse_import()?;
+                    let mut import_expr = self.parse_import()?;
+                    import_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::Import(Box::new(import_expr)));
                 }
                 // Handle set! special form
                 TokenType::SetBang => {
                     self.advance(); // consume 'set!'
-                    let set_expr = self.parse_set()?;
+                    let mut set_expr = self.parse_set()?;
+                    set_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
                     return Ok(Expr::Set(Box::new(set_expr)));
                 }
                 // Handle begin special form
                 TokenType::Begin => {
                     self.advance(); // consume 'begin'
-                    let begin_expr = self.parse_begin()?;
+                    let mut begin_expr = self.parse_begin()?;
+                    begin_expr.token = token;
                     self.expect_token(TokenType::RightParen)?;
-                    return Ok(begin_expr);
+                    return Ok(Expr::Begin(Box::new(begin_expr)));
                 }
                 _ => {}
             }
@@ -336,34 +353,39 @@ impl Parser {
 
     /// Parse quoted expressions: 'expr
     fn parse_quote(&mut self) -> Result<Expr, ParseError> {
+        let token = self.current_token_cloned();
         self.expect_token(TokenType::QuoteMark)?;
         let expr = self.parse_expr()?;
-        Ok(Expr::Quote(Box::new(expr)))
+        Ok(Expr::Quote(Box::new(expr), token))
     }
 
     /// Parse quasiquoted expressions: `expr
     fn parse_quasiquote(&mut self) -> Result<Expr, ParseError> {
+        let token = self.current_token_cloned();
         self.expect_token(TokenType::BackQuote)?;
         let expr = self.parse_expr()?;
-        Ok(Expr::QuasiQuote(Box::new(expr)))
+        Ok(Expr::QuasiQuote(Box::new(expr), token))
     }
 
     /// Parse unquoted expressions: ,expr
     fn parse_unquote(&mut self) -> Result<Expr, ParseError> {
+        let token = self.current_token_cloned();
         self.expect_token(TokenType::Comma)?;
         let expr = self.parse_expr()?;
-        Ok(Expr::UnQuote(Box::new(expr)))
+        Ok(Expr::UnQuote(Box::new(expr), token))
     }
 
     /// Parse unquote-splicing expressions: ,@expr
     fn parse_unquote_splicing(&mut self) -> Result<Expr, ParseError> {
+        let token = self.current_token_cloned();
         self.expect_token(TokenType::CommaAt)?;
         let expr = self.parse_expr()?;
-        Ok(Expr::UnQuoteSplicing(Box::new(expr)))
+        Ok(Expr::UnQuoteSplicing(Box::new(expr), token))
     }
 
     /// Parse vector expressions: #(expr ...)
     fn parse_vector(&mut self) -> Result<Expr, ParseError> {
+        let token = self.current_token_cloned();
         self.expect_token(TokenType::VectorPrefix)?;
         self.expect_token(TokenType::LeftParen)?;
 
@@ -377,11 +399,11 @@ impl Parser {
         }
 
         self.expect_token(TokenType::RightParen)?;
-        Ok(Expr::Vector(elements))
+        Ok(Expr::Vector(elements, token))
     }
 
     /// Parse begin expressions: (begin expr1 expr2 ...)
-    fn parse_begin(&mut self) -> Result<Expr, ParseError> {
+    fn parse_begin(&mut self) -> Result<crate::ast::BeginExpr, ParseError> {
         let mut expressions = Vec::new();
 
         // Parse all expressions until closing parenthesis
@@ -403,7 +425,10 @@ impl Parser {
             });
         }
 
-        Ok(Expr::Begin(expressions))
+        Ok(crate::ast::BeginExpr {
+            body: expressions,
+            token: None,
+        })
     }
 
     // Utility methods
@@ -411,12 +436,21 @@ impl Parser {
         self.tokens.get(self.position)
     }
 
+    fn current_token_cloned(&self) -> Option<Token> {
+        Some(self.tokens[self.position].clone())
+    }
+
     /// Parse docstring and body expressions
     /// Returns (docstring, body) where docstring is Some(string) if found, None otherwise
     /// A string literal is only treated as a docstring if there are additional expressions after it
-    fn parse_docstring_and_body(&mut self) -> Result<(Option<String>, Vec<Expr>), ParseError> {
+    fn parse_docstring_and_body(
+        &mut self,
+    ) -> Result<(Option<Token>, Option<String>, Vec<Expr>), ParseError> {
         // First, collect all expressions
         let mut all_expressions = Vec::new();
+        let first_token = self.current_token_cloned();
+        all_expressions.push(self.parse_expr()?);
+        let second_token = self.current_token_cloned();
         while let Some(token_info) = self.current_token() {
             if matches!(token_info.token_type, TokenType::RightParen) {
                 break;
@@ -426,20 +460,20 @@ impl Parser {
 
         // If we have more than one expression and the first is a string literal,
         // treat the first as a docstring and the rest as the body
-        let (docstring, body) = if all_expressions.len() > 1 {
-            if let Some(Expr::String(s)) = all_expressions.first() {
+        let (token, docstring, body) = if all_expressions.len() > 1 {
+            if let Some(Expr::String(s, _)) = all_expressions.first() {
                 let docstring = Some(s.clone());
                 let body = all_expressions.into_iter().skip(1).collect();
-                (docstring, body)
+                (second_token, docstring, body)
             } else {
-                (None, all_expressions)
+                (second_token, None, all_expressions)
             }
         } else {
             // If we have only one expression (or none), treat it as the body
-            (None, all_expressions)
+            (first_token, None, all_expressions)
         };
 
-        Ok((docstring, body))
+        Ok((token, docstring, body))
     }
 
     fn peek_token(&self) -> Option<&Token> {
@@ -494,11 +528,13 @@ impl Parser {
                         let name = name.clone();
                         self.advance();
                         let value = self.parse_expr()?;
-                        Ok(crate::ast::DefineExpr {
+                        let define_expr = crate::ast::DefineExpr {
                             name,
                             value,
                             docstring: None,
-                        })
+                            token: None,
+                        };
+                        Ok(define_expr)
                     }
                     TokenType::LeftParen => {
                         // Function definition: (define (name args...) body...)
@@ -559,7 +595,7 @@ impl Parser {
                         self.expect_token(TokenType::RightParen)?; // consume closing ')'
 
                         // Parse docstring and function body
-                        let (docstring, body) = self.parse_docstring_and_body()?;
+                        let (token, docstring, body) = self.parse_docstring_and_body()?;
 
                         // Ensure we have at least one body expression
                         if body.is_empty() {
@@ -579,12 +615,14 @@ impl Parser {
                             params,
                             body,
                             docstring: docstring.clone(),
+                            token: token,
                         };
 
                         Ok(crate::ast::DefineExpr {
                             name,
                             value: Expr::Lambda(Box::new(lambda_expr)),
                             docstring,
+                            token: None,
                         })
                     }
                     _ => {
@@ -638,7 +676,7 @@ impl Parser {
         self.expect_token(TokenType::RightParen)?;
 
         // Parse docstring and lambda body
-        let (docstring, body) = self.parse_docstring_and_body()?;
+        let (token, docstring, body) = self.parse_docstring_and_body()?;
 
         if body.is_empty() {
             return Err(ParseError::invalid_special_form(
@@ -654,6 +692,7 @@ impl Parser {
             params,
             body,
             docstring,
+            token,
         })
     }
 
@@ -662,7 +701,7 @@ impl Parser {
         let then_expr = self.parse_expr()?;
         let else_expr = if let Some(token_info) = self.current_token() {
             if matches!(token_info.token_type, TokenType::RightParen) {
-                Expr::Boolean(false)
+                Expr::Boolean(false, None)
             } else {
                 self.parse_expr()?
             }
@@ -677,6 +716,7 @@ impl Parser {
             condition,
             then_expr,
             else_expr,
+            token: None,
         })
     }
 
@@ -684,6 +724,7 @@ impl Parser {
         let mut clauses = Vec::new();
 
         while let Some(token_info) = self.current_token() {
+            let token = self.current_token_cloned();
             if matches!(token_info.token_type, TokenType::RightParen) {
                 break;
             }
@@ -704,7 +745,7 @@ impl Parser {
                 match &token_info.token_type {
                     TokenType::Else => {
                         self.advance();
-                        Expr::Boolean(true)
+                        Expr::Boolean(true, None)
                     }
                     _ => self.parse_expr()?,
                 }
@@ -734,7 +775,11 @@ impl Parser {
             }
 
             self.expect_token(TokenType::RightParen)?;
-            clauses.push(crate::ast::CondClause { test, body });
+            clauses.push(crate::ast::CondClause {
+                test,
+                body,
+                token: token,
+            });
         }
 
         if clauses.is_empty() {
@@ -747,7 +792,10 @@ impl Parser {
             ));
         }
 
-        Ok(crate::ast::CondExpr { clauses })
+        Ok(crate::ast::CondExpr {
+            clauses,
+            token: None,
+        })
     }
 
     fn parse_let(&mut self) -> Result<crate::ast::LetExpr, ParseError> {
@@ -820,7 +868,11 @@ impl Parser {
             ));
         }
 
-        Ok(crate::ast::LetExpr { bindings, body })
+        Ok(crate::ast::LetExpr {
+            bindings,
+            body,
+            token: None,
+        })
     }
 
     fn parse_let_star(&mut self) -> Result<crate::ast::LetStarExpr, ParseError> {
@@ -884,7 +936,11 @@ impl Parser {
             ));
         }
 
-        Ok(crate::ast::LetStarExpr { bindings, body })
+        Ok(crate::ast::LetStarExpr {
+            bindings,
+            body,
+            token: None,
+        })
     }
 
     fn parse_let_loop(&mut self) -> Result<crate::ast::LetLoopExpr, ParseError> {
@@ -976,6 +1032,7 @@ impl Parser {
             name,
             bindings,
             body,
+            token: None,
         })
     }
 
@@ -1038,18 +1095,29 @@ impl Parser {
             ));
         }
 
-        Ok(crate::ast::LetValuesExpr { bindings, body })
+        Ok(crate::ast::LetValuesExpr {
+            bindings,
+            body,
+            token: None,
+        })
     }
 
     fn parse_call_with_values(&mut self) -> Result<crate::ast::CallWithValuesExpr, ParseError> {
         let producer = self.parse_expr()?;
         let consumer = self.parse_expr()?;
-        Ok(crate::ast::CallWithValuesExpr { producer, consumer })
+        Ok(crate::ast::CallWithValuesExpr {
+            producer,
+            consumer,
+            token: None,
+        })
     }
 
     fn parse_import(&mut self) -> Result<crate::ast::ImportExpr, ParseError> {
         let module_spec = self.parse_expr()?;
-        Ok(crate::ast::ImportExpr { module_spec })
+        Ok(crate::ast::ImportExpr {
+            module_spec,
+            token: None,
+        })
     }
 
     fn parse_set(&mut self) -> Result<crate::ast::SetExpr, ParseError> {
@@ -1079,6 +1147,10 @@ impl Parser {
         };
 
         let value = self.parse_expr()?;
-        Ok(crate::ast::SetExpr { variable, value })
+        Ok(crate::ast::SetExpr {
+            variable,
+            value,
+            token: None,
+        })
     }
 }

@@ -1,5 +1,5 @@
 use crate::ast::{
-    CallWithValuesExpr, DefineExpr, Expr, ImportExpr, LambdaExpr, LetExpr, LetLoopExpr,
+    BeginExpr, CallWithValuesExpr, DefineExpr, Expr, ImportExpr, LambdaExpr, LetExpr, LetLoopExpr,
     LetStarExpr, LetValuesExpr, SetExpr,
 };
 use crate::bytecode::{Chunk, OpCode};
@@ -231,11 +231,11 @@ impl Compiler {
 
         match expr {
             // Literal expressions
-            Expr::Number(n) => self.compile_number(*n),
-            Expr::String(s) => self.compile_string(s.clone()),
-            Expr::Character(c) => self.compile_character(*c),
-            Expr::Boolean(b) => self.compile_boolean(*b),
-            Expr::Variable(name) => self.compile_variable(name),
+            Expr::Number(n, _) => self.compile_number(*n),
+            Expr::String(s, _) => self.compile_string(s.clone()),
+            Expr::Character(c, _) => self.compile_character(*c),
+            Expr::Boolean(b, _) => self.compile_boolean(*b),
+            Expr::Variable(name, _) => self.compile_variable(name),
 
             // Function expressions
             Expr::Lambda(lambda) => self.compile_lambda(lambda),
@@ -258,17 +258,17 @@ impl Compiler {
             Expr::Set(set_expr) => self.compile_set(set_expr),
 
             // Quotation
-            Expr::Quote(quoted) => self.compile_quote(quoted),
-            Expr::QuasiQuote(quasi) => self.compile_quasiquote(quasi),
-            Expr::UnQuote(unquoted) => self.compile_unquote(unquoted),
-            Expr::UnQuoteSplicing(spliced) => self.compile_unquote_splicing(spliced),
+            Expr::Quote(quoted, _) => self.compile_quote(quoted),
+            Expr::QuasiQuote(quasi, _) => self.compile_quasiquote(quasi),
+            Expr::UnQuote(unquoted, _) => self.compile_unquote(unquoted),
+            Expr::UnQuoteSplicing(spliced, _) => self.compile_unquote_splicing(spliced),
 
             // Sequencing
-            Expr::Begin(exprs) => self.compile_begin(exprs),
+            Expr::Begin(exprs) => self.compile_begin(&exprs.body),
 
             // Data structures
-            Expr::List(elements) => self.compile_list(elements),
-            Expr::Vector(elements) => self.compile_vector_literal(elements),
+            Expr::List(elements, _) => self.compile_list(elements),
+            Expr::Vector(elements, _) => self.compile_vector_literal(elements),
 
             // Advanced forms
             Expr::CallWithValues(call_with_values) => {
@@ -281,7 +281,10 @@ impl Compiler {
     /// Compile a number literal
     fn compile_number(&mut self, value: f64) -> Result<(), CompileError> {
         self.trace(&format!("Compiling number: {}", value));
-        self.trace_compilation_phase(CompilationPhase::ConstantGeneration, &Expr::Number(value));
+        self.trace_compilation_phase(
+            CompilationPhase::ConstantGeneration,
+            &Expr::Number(value, None),
+        );
         self.emit_constant(Value::Number(value))?;
         Ok(())
     }
@@ -319,7 +322,7 @@ impl Compiler {
         self.trace(&format!("Compiling variable reference: {}", name));
         self.trace_compilation_phase(
             CompilationPhase::VariableResolution,
-            &Expr::Variable(name.to_string()),
+            &Expr::Variable(name.to_string(), None),
         );
 
         // Try to resolve as local variable first
@@ -805,7 +808,7 @@ impl Compiler {
         ));
 
         // Check for built-in functions
-        if let Expr::Variable(func_name) = func_expr {
+        if let Expr::Variable(func_name, None) = func_expr {
             match func_name.as_str() {
                 "cons" => {
                     if args.len() != 2 {
@@ -915,7 +918,7 @@ impl Compiler {
                             got: 0,
                         });
                     }
-                    
+
                     match args.len() {
                         1 => {
                             // (- x) => -x (negate)
@@ -963,7 +966,7 @@ impl Compiler {
                             got: 0,
                         });
                     }
-                    
+
                     match args.len() {
                         1 => {
                             // (/ x) => 1/x (reciprocal)
@@ -990,7 +993,7 @@ impl Compiler {
                             got: args.len(),
                         });
                     }
-                    
+
                     if args.len() == 2 {
                         // (< x y) => x < y
                         self.compile_expr(&args[0])?;
@@ -1012,7 +1015,7 @@ impl Compiler {
                             got: args.len(),
                         });
                     }
-                    
+
                     if args.len() == 2 {
                         // (> x y) => x > y
                         self.compile_expr(&args[0])?;
@@ -1486,7 +1489,11 @@ impl Compiler {
     }
 
     /// Compile a chained comparison operation (e.g., (< x y z) => (and (< x y) (< y z)))
-    fn compile_chained_comparison(&mut self, args: &[Expr], op: OpCode) -> Result<(), CompileError> {
+    fn compile_chained_comparison(
+        &mut self,
+        args: &[Expr],
+        op: OpCode,
+    ) -> Result<(), CompileError> {
         if args.len() < 2 {
             return Err(CompileError::ArityMismatch {
                 expected: 2,
@@ -1496,7 +1503,7 @@ impl Compiler {
 
         // For chained comparisons like (< a b c d), we need to generate:
         // (and (< a b) (< b c) (< c d))
-        // 
+        //
         // We'll compile this as:
         // 1. Evaluate first comparison
         // 2. If false, short-circuit to false
@@ -1517,12 +1524,12 @@ impl Compiler {
                 // Duplicate the result for the next iteration
                 // (we need to keep one copy for the final result)
                 // For now, we'll use a simpler approach that re-evaluates
-                
+
                 // Jump to false if this comparison failed
                 let jump_pos = self.function.chunk.count();
                 self.emit_short(OpCode::OP_JUMP_IF_FALSE, 0, 1);
                 jump_to_false_positions.push(jump_pos);
-                
+
                 // Pop the true result since we're continuing
                 self.emit_byte(OpCode::OP_POP, 1);
             }
@@ -1530,7 +1537,7 @@ impl Compiler {
 
         // If we get here, all comparisons were true
         // The last comparison result is still on the stack
-        
+
         // Patch all the false jumps to jump to the end
         let end_pos = self.function.chunk.count();
         for jump_pos in jump_to_false_positions {
@@ -1555,7 +1562,7 @@ impl Compiler {
 
         // Check if this is an if expression without an else clause
         // (parser sets else_expr to Expr::Boolean(false) in this case)
-        let has_else_clause = !matches!(if_expr.else_expr, Expr::Boolean(false));
+        let has_else_clause = !matches!(if_expr.else_expr, Expr::Boolean(false, None));
 
         // Compile the condition
         self.compile_expr(&if_expr.condition)?;
@@ -1621,8 +1628,8 @@ impl Compiler {
 
             // Check if this is an else clause (test is #t or similar)
             let is_else_clause = match &clause.test {
-                Expr::Boolean(true) => true,
-                Expr::Variable(name) if name == "else" => true,
+                Expr::Boolean(true, None) => true,
+                Expr::Variable(name, None) if name == "else" => true,
                 _ => false,
             };
 
@@ -1720,6 +1727,7 @@ impl Compiler {
             params: param_names.clone(),
             body: let_loop.body.clone(),
             docstring: None,
+            token: None,
         };
 
         // Define the function as a global variable so it can reference itself
@@ -1819,7 +1827,7 @@ impl Compiler {
         // (let* ((var1 val1) (var2 val2) ... (varn valn)) body...)
         // becomes:
         // (let ((var1 val1)) (let ((var2 val2)) ... (let ((varn valn)) body...) ...))
-        
+
         let expanded_expr = self.expand_let_star_to_nested_let(&let_star.bindings, &let_star.body);
         self.compile_expr(&expanded_expr)
     }
@@ -1831,22 +1839,26 @@ impl Compiler {
             if body.len() == 1 {
                 body[0].clone()
             } else {
-                Expr::Begin(body.to_vec())
+                Expr::Begin(Box::new(BeginExpr {
+                    body: body.to_vec().clone(),
+                    token: None,
+                }))
             }
         } else {
             // Take the first binding and create a let expression with the rest nested inside
             let (var_name, var_value) = &bindings[0];
             let remaining_bindings = &bindings[1..];
-            
+
             // Recursively expand the remaining bindings
             let nested_body = self.expand_let_star_to_nested_let(remaining_bindings, body);
-            
+
             // Create a let expression with this binding and the nested structure as body
             let let_expr = LetExpr {
                 bindings: vec![(var_name.clone(), var_value.clone())],
                 body: vec![nested_body],
+                token: None,
             };
-            
+
             Expr::Let(Box::new(let_expr))
         }
     }
@@ -2004,7 +2016,7 @@ impl Compiler {
         // (let-values (((vars...) producer-expr)) body...)
         // becomes:
         // (call-with-values (lambda () producer-expr) (lambda (vars...) body...))
-        
+
         // Handle multiple bindings by nesting transformations
         if let_values.bindings.is_empty() {
             // No bindings, just compile the body in a begin block
@@ -2016,9 +2028,12 @@ impl Compiler {
         let mut result_expr = if let_values.body.len() == 1 {
             let_values.body[0].clone()
         } else {
-            Expr::Begin(let_values.body.clone())
+            Expr::Begin(Box::new(BeginExpr {
+                body: let_values.body.clone(),
+                token: None,
+            }))
         };
-        
+
         // Process bindings in reverse order to create proper nesting
         for (vars, producer_expr) in let_values.bindings.iter().rev() {
             // Create producer lambda: (lambda () producer-expr)
@@ -2026,25 +2041,28 @@ impl Compiler {
                 params: vec![],
                 body: vec![producer_expr.clone()],
                 docstring: None,
+                token: None,
             };
-            
+
             // Create consumer lambda: (lambda (vars...) result_expr)
             let consumer = LambdaExpr {
                 params: vars.clone(),
                 body: vec![result_expr.clone()],
                 docstring: None,
+                token: None,
             };
-            
+
             // Create call-with-values expression
             let call_with_values = CallWithValuesExpr {
                 producer: Expr::Lambda(Box::new(producer)),
                 consumer: Expr::Lambda(Box::new(consumer)),
+                token: None,
             };
-            
+
             // Update result_expr to be this call-with-values for the next iteration
             result_expr = Expr::CallWithValues(Box::new(call_with_values));
         }
-        
+
         // Compile the final transformed expression
         self.compile_expr(&result_expr)
     }
@@ -2248,13 +2266,13 @@ impl Compiler {
     /// Convert an AST expression to a runtime value (for quote)
     fn expr_to_value(&self, expr: &Expr) -> Result<Value, CompileError> {
         match expr {
-            Expr::Number(n) => Ok(Value::Number(*n)),
-            Expr::String(s) => Ok(Value::string(s.clone())),
-            Expr::Character(c) => Ok(Value::character(*c)),
-            Expr::Boolean(b) => Ok(Value::Boolean(*b)),
-            Expr::Variable(name) => Ok(Value::symbol(name.clone())), // Symbols
+            Expr::Number(n, _) => Ok(Value::Number(*n)),
+            Expr::String(s, _) => Ok(Value::string(s.clone())),
+            Expr::Character(c, _) => Ok(Value::character(*c)),
+            Expr::Boolean(b, _) => Ok(Value::Boolean(*b)),
+            Expr::Variable(name, _) => Ok(Value::symbol(name.clone())), // Symbols
 
-            Expr::List(elements) => {
+            Expr::List(elements, _) => {
                 if elements.is_empty() {
                     Ok(Value::Nil)
                 } else {
@@ -2263,7 +2281,7 @@ impl Compiler {
                 }
             }
 
-            Expr::Vector(elements) => {
+            Expr::Vector(elements, _) => {
                 // Convert elements to values and create vector
                 let mut values = Vec::new();
                 for element in elements {
@@ -2273,7 +2291,7 @@ impl Compiler {
             }
 
             // Handle nested quotes
-            Expr::Quote(quoted) => {
+            Expr::Quote(quoted, _) => {
                 // Nested quote: '(quote x) => (quote x)
                 let quoted_value = self.expr_to_value(quoted)?;
                 let quote_symbol = Value::symbol("quote".to_string());
@@ -2362,7 +2380,7 @@ mod tests {
     #[test]
     fn test_compile_number() {
         let mut compiler = Compiler::new_script();
-        let expr = Expr::Number(42.5);
+        let expr = Expr::Number(42.5, None);
 
         compiler.compile_expr(&expr).unwrap();
 
@@ -2382,7 +2400,7 @@ mod tests {
     #[test]
     fn test_compile_string() {
         let mut compiler = Compiler::new_script();
-        let expr = Expr::String("hello".to_string());
+        let expr = Expr::String("hello".to_string(), None);
 
         compiler.compile_expr(&expr).unwrap();
 
@@ -2406,7 +2424,7 @@ mod tests {
     #[test]
     fn test_compile_character() {
         let mut compiler = Compiler::new_script();
-        let expr = Expr::Character('x');
+        let expr = Expr::Character('x', None);
 
         compiler.compile_expr(&expr).unwrap();
 
@@ -2429,7 +2447,7 @@ mod tests {
     #[test]
     fn test_compile_boolean_true() {
         let mut compiler = Compiler::new_script();
-        let expr = Expr::Boolean(true);
+        let expr = Expr::Boolean(true, None);
 
         compiler.compile_expr(&expr).unwrap();
 
@@ -2444,7 +2462,7 @@ mod tests {
     #[test]
     fn test_compile_boolean_false() {
         let mut compiler = Compiler::new_script();
-        let expr = Expr::Boolean(false);
+        let expr = Expr::Boolean(false, None);
 
         compiler.compile_expr(&expr).unwrap();
 
@@ -2459,7 +2477,7 @@ mod tests {
     #[test]
     fn test_compile_variable_as_global() {
         let mut compiler = Compiler::new_script();
-        let expr = Expr::Variable("x".to_string());
+        let expr = Expr::Variable("x".to_string(), None);
 
         // Should now compile successfully as a global variable
         let result = compiler.compile_expr(&expr);
@@ -2475,7 +2493,7 @@ mod tests {
     #[test]
     fn test_end_compiler_adds_return() {
         let mut compiler = Compiler::new_script();
-        compiler.compile_expr(&Expr::Number(42.0)).unwrap();
+        compiler.compile_expr(&Expr::Number(42.0, None)).unwrap();
 
         let function = compiler.end_compiler();
 
@@ -2501,12 +2519,12 @@ mod tests {
         let mut compiler = Compiler::new_script();
 
         // Compile multiple literal expressions
-        compiler.compile_expr(&Expr::Number(1.0)).unwrap();
+        compiler.compile_expr(&Expr::Number(1.0, None)).unwrap();
         compiler
-            .compile_expr(&Expr::String("test".to_string()))
+            .compile_expr(&Expr::String("test".to_string(), None))
             .unwrap();
-        compiler.compile_expr(&Expr::Boolean(true)).unwrap();
-        compiler.compile_expr(&Expr::Character('a')).unwrap();
+        compiler.compile_expr(&Expr::Boolean(true, None)).unwrap();
+        compiler.compile_expr(&Expr::Character('a', None)).unwrap();
 
         // Should have correct number of constants (boolean doesn't add constant)
         assert_eq!(compiler.function.chunk.constants.len(), 3);
@@ -2535,14 +2553,14 @@ mod tests {
         }
 
         // Try to add one more constant - should fail
-        let result = compiler.compile_expr(&Expr::Number(999.0));
+        let result = compiler.compile_expr(&Expr::Number(999.0, None));
         assert!(matches!(result, Err(CompileError::TooManyConstants)));
     }
 
     #[test]
     fn test_global_variable_access() {
         let mut compiler = Compiler::new_script();
-        let expr = Expr::Variable("global_var".to_string());
+        let expr = Expr::Variable("global_var".to_string(), None);
 
         compiler.compile_expr(&expr).unwrap();
 
@@ -2629,7 +2647,7 @@ mod tests {
 
         // Compile global definition: (define x 42)
         compiler
-            .compile_global_define("x", &Expr::Number(42.0))
+            .compile_global_define("x", &Expr::Number(42.0, None))
             .unwrap();
 
         // Should have compiled the value and emitted define instruction
@@ -2690,8 +2708,9 @@ mod tests {
         // Create a simple lambda: (lambda (x) x)
         let lambda = LambdaExpr {
             params: vec!["x".to_string()],
-            body: vec![Expr::Variable("x".to_string())],
+            body: vec![Expr::Variable("x".to_string(), None)],
             docstring: None,
+            token: None,
         };
 
         compiler.compile_lambda(&lambda).unwrap();
@@ -2712,8 +2731,8 @@ mod tests {
 
         // Create a function call: (f 1 2)
         let call_expr = Expr::Call(
-            Box::new(Expr::Variable("f".to_string())),
-            vec![Expr::Number(1.0), Expr::Number(2.0)],
+            Box::new(Expr::Variable("f".to_string(), None)),
+            vec![Expr::Number(1.0, None), Expr::Number(2.0, None)],
         );
 
         compiler.compile_expr(&call_expr).unwrap();
@@ -2741,8 +2760,9 @@ mod tests {
         // Create a define expression: (define x 42)
         let define = DefineExpr {
             name: "x".to_string(),
-            value: Expr::Number(42.0),
+            value: Expr::Number(42.0, None),
             docstring: None,
+            token: None,
         };
 
         compiler.compile_define(&define).unwrap();
@@ -2768,8 +2788,9 @@ mod tests {
         // Create a define expression: (define x 42)
         let define = DefineExpr {
             name: "x".to_string(),
-            value: Expr::Number(42.0),
+            value: Expr::Number(42.0, None),
             docstring: None,
+            token: None,
         };
 
         compiler.compile_define(&define).unwrap();
@@ -2892,25 +2913,31 @@ mod tests {
         let producer = Expr::Lambda(Box::new(LambdaExpr {
             params: vec![],
             body: vec![Expr::Call(
-                Box::new(Expr::Variable("values".to_string())),
-                vec![Expr::Number(1.0), Expr::Number(2.0)],
+                Box::new(Expr::Variable("values".to_string(), None)),
+                vec![Expr::Number(1.0, None), Expr::Number(2.0, None)],
             )],
             docstring: None,
+            token: None,
         }));
 
         let consumer = Expr::Lambda(Box::new(LambdaExpr {
             params: vec!["x".to_string(), "y".to_string()],
             body: vec![Expr::Call(
-                Box::new(Expr::Variable("+".to_string())),
+                Box::new(Expr::Variable("+".to_string(), None)),
                 vec![
-                    Expr::Variable("x".to_string()),
-                    Expr::Variable("y".to_string()),
+                    Expr::Variable("x".to_string(), None),
+                    Expr::Variable("y".to_string(), None),
                 ],
             )],
             docstring: None,
+            token: None,
         }));
 
-        let call_with_values = CallWithValuesExpr { producer, consumer };
+        let call_with_values = CallWithValuesExpr {
+            producer,
+            consumer,
+            token: None,
+        };
 
         compiler
             .compile_call_with_values(&call_with_values)
@@ -2939,35 +2966,45 @@ mod tests {
     #[test]
     fn test_let_star_expansion() {
         use crate::ast::LetStarExpr;
-        
+
         let compiler = Compiler::new_script();
-        
+
         // Create a let* expression: (let* ((a 10) (b (+ a 5))) (+ a b))
         let let_star = LetStarExpr {
             bindings: vec![
-                ("a".to_string(), Expr::Number(10.0)),
-                ("b".to_string(), Expr::Call(
-                    Box::new(Expr::Variable("+".to_string())),
-                    vec![Expr::Variable("a".to_string()), Expr::Number(5.0)]
-                )),
+                ("a".to_string(), Expr::Number(10.0, None)),
+                (
+                    "b".to_string(),
+                    Expr::Call(
+                        Box::new(Expr::Variable("+".to_string(), None)),
+                        vec![
+                            Expr::Variable("a".to_string(), None),
+                            Expr::Number(5.0, None),
+                        ],
+                    ),
+                ),
             ],
             body: vec![Expr::Call(
-                Box::new(Expr::Variable("+".to_string())),
-                vec![Expr::Variable("a".to_string()), Expr::Variable("b".to_string())]
+                Box::new(Expr::Variable("+".to_string(), None)),
+                vec![
+                    Expr::Variable("a".to_string(), None),
+                    Expr::Variable("b".to_string(), None),
+                ],
             )],
+            token: None,
         };
-        
+
         // Test the expansion method
         let expanded = compiler.expand_let_star_to_nested_let(&let_star.bindings, &let_star.body);
-        
+
         // The expanded form should be a nested let structure
         match expanded {
             Expr::Let(outer_let) => {
                 // Outer let should bind 'a' to 10
                 assert_eq!(outer_let.bindings.len(), 1);
                 assert_eq!(outer_let.bindings[0].0, "a");
-                assert!(matches!(outer_let.bindings[0].1, Expr::Number(10.0)));
-                
+                assert!(matches!(outer_let.bindings[0].1, Expr::Number(10.0, None)));
+
                 // Body should be another let expression
                 assert_eq!(outer_let.body.len(), 1);
                 match &outer_let.body[0] {
@@ -2988,39 +3025,41 @@ mod tests {
     #[test]
     fn test_let_star_empty_bindings() {
         let compiler = Compiler::new_script();
-        
+
         // Test let* with no bindings: (let* () body)
         let let_star = LetStarExpr {
             bindings: vec![],
-            body: vec![Expr::Number(42.0)],
+            body: vec![Expr::Number(42.0, None)],
+            token: None,
         };
-        
+
         let expanded = compiler.expand_let_star_to_nested_let(&let_star.bindings, &let_star.body);
-        
+
         // Should just return the body expression directly
-        assert!(matches!(expanded, Expr::Number(42.0)));
+        assert!(matches!(expanded, Expr::Number(42.0, None)));
     }
 
     #[test]
     fn test_let_star_single_binding() {
         let compiler = Compiler::new_script();
-        
+
         // Test let* with single binding: (let* ((x 5)) x)
         let let_star = LetStarExpr {
-            bindings: vec![("x".to_string(), Expr::Number(5.0))],
-            body: vec![Expr::Variable("x".to_string())],
+            bindings: vec![("x".to_string(), Expr::Number(5.0, None))],
+            body: vec![Expr::Variable("x".to_string(), None)],
+            token: None,
         };
-        
+
         let expanded = compiler.expand_let_star_to_nested_let(&let_star.bindings, &let_star.body);
-        
+
         // Should expand to a single let expression
         match expanded {
             Expr::Let(let_expr) => {
                 assert_eq!(let_expr.bindings.len(), 1);
                 assert_eq!(let_expr.bindings[0].0, "x");
-                assert!(matches!(let_expr.bindings[0].1, Expr::Number(5.0)));
+                assert!(matches!(let_expr.bindings[0].1, Expr::Number(5.0, None)));
                 assert_eq!(let_expr.body.len(), 1);
-                assert!(matches!(let_expr.body[0], Expr::Variable(_)));
+                assert!(matches!(let_expr.body[0], Expr::Variable(_, None)));
             }
             _ => panic!("Expected let expression"),
         }
@@ -3029,19 +3068,20 @@ mod tests {
     #[test]
     fn test_let_star_compilation() {
         let mut compiler = Compiler::new_script();
-        
+
         // Test that let* actually compiles without errors
         let let_star = LetStarExpr {
             bindings: vec![
-                ("a".to_string(), Expr::Number(10.0)),
-                ("b".to_string(), Expr::Variable("a".to_string())),
+                ("a".to_string(), Expr::Number(10.0, None)),
+                ("b".to_string(), Expr::Variable("a".to_string(), None)),
             ],
-            body: vec![Expr::Variable("b".to_string())],
+            body: vec![Expr::Variable("b".to_string(), None)],
+            token: None,
         };
-        
+
         let result = compiler.compile_let_star(&let_star);
         assert!(result.is_ok());
-        
+
         // Should have generated some bytecode
         assert!(!compiler.function.chunk.code.is_empty());
     }

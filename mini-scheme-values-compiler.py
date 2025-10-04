@@ -241,7 +241,7 @@ class Compiler:
     def end_compiler(self) -> ObjFunction:
         chunk = self.current_chunk()
         if not chunk.code or chunk.code[-2] != OpCode.OP_VALUES:
-             self.emit_byte(OpCode.OP_RETURN)
+            self.emit_byte(OpCode.OP_RETURN)
         return self.function
 
     def emit_byte(self, byte: Union[int, OpCode]) -> None:
@@ -286,6 +286,7 @@ class Compiler:
             except ValueError:
                 return str(token)
 
+
 # -----------------------------------------------------------------------------
 # 4. 虚拟机 (VM) - 【已修改】
 # -----------------------------------------------------------------------------
@@ -301,13 +302,16 @@ class VM:
         self.stack: List[Value] = []
         self.frames: List[CallFrame] = []
         self.globals: Dict[str, Value] = {}
-        self.pending_consumer: Optional[ObjClosure] = None # 新增: 用于C-W-V
+        self.pending_consumer: Optional[ObjClosure] = None  # 新增: 用于C-W-V
         self.debug_trace: bool = False
 
     def _log_stack(self) -> None:
-        if not self.debug_trace: return
+        if not self.debug_trace:
+            return
         print("          | ", end="")
-        if not self.stack: print("[ empty ]"); return
+        if not self.stack:
+            print("[ empty ]")
+            return
         for i, value in enumerate(self.stack):
             is_in_current_frame = False
             if self.frames and i >= self.current_frame().slots_start:
@@ -316,17 +320,29 @@ class VM:
         print()
 
     def _log_instruction(self) -> None:
-        if not self.debug_trace: return
+        if not self.debug_trace:
+            return
         frame = self.current_frame()
         ip = frame.ip
         chunk = frame.closure.function.chunk
         instruction = OpCode(chunk.code[ip])
         print(f"{ip:04d} ", end="")
-        if instruction in [OpCode.OP_CONSTANT, OpCode.OP_DEFINE_GLOBAL, OpCode.OP_GET_GLOBAL, OpCode.OP_CLOSURE]:
+        if instruction in [
+            OpCode.OP_CONSTANT,
+            OpCode.OP_DEFINE_GLOBAL,
+            OpCode.OP_GET_GLOBAL,
+            OpCode.OP_CLOSURE,
+        ]:
             const_idx = chunk.code[ip + 1]
             const_val = chunk.constants[const_idx]
             print(f"{instruction.name:<18} {const_idx:4} '{const_val}'")
-        elif instruction in [OpCode.OP_GET_LOCAL, OpCode.OP_SET_LOCAL, OpCode.OP_CALL, OpCode.OP_LIST, OpCode.OP_VALUES]:
+        elif instruction in [
+            OpCode.OP_GET_LOCAL,
+            OpCode.OP_SET_LOCAL,
+            OpCode.OP_CALL,
+            OpCode.OP_LIST,
+            OpCode.OP_VALUES,
+        ]:
             operand = chunk.code[ip + 1]
             print(f"{instruction.name:<18} {operand:4}")
         else:
@@ -334,7 +350,8 @@ class VM:
 
     def run(self, function: ObjFunction, debug_trace: bool = False) -> Optional[Value]:
         self.debug_trace = debug_trace
-        if self.debug_trace: print("\n--- VM Trace Start ---")
+        if self.debug_trace:
+            print("\n--- VM Trace Start ---")
 
         closure = ObjClosure(function)
         self.push(closure)
@@ -360,7 +377,8 @@ class VM:
             elif instruction == OpCode.OP_GET_GLOBAL:
                 name = cast(str, self.read_constant(frame))
                 value = self.globals.get(name)
-                if value is None: raise NameError(f"Undefined global variable '{name}'")
+                if value is None:
+                    raise NameError(f"Undefined global variable '{name}'")
                 self.push(value)
             elif instruction == OpCode.OP_GET_LOCAL:
                 self.push(self.stack[frame.slots_start + self.read_byte(frame)])
@@ -386,10 +404,14 @@ class VM:
                 self.push(ObjClosure(function))
             elif instruction == OpCode.OP_RETURN:
                 result = self.pop()
-                if self.debug_trace: print(f"--- Return from {frame.closure.function.name} with value: {result} ---")
+                if self.debug_trace:
+                    print(
+                        f"--- Return from {frame.closure.function.name} with value: {result} ---"
+                    )
                 self.frames.pop()
                 if not self.frames:
-                    if self.debug_trace: print("--- VM Trace End ---")
+                    if self.debug_trace:
+                        print("--- VM Trace End ---")
                     return result
                 self.stack = self.stack[: frame.slots_start]
                 self.push(result)
@@ -397,29 +419,37 @@ class VM:
                 consumer = cast(ObjClosure, self.pop())
                 producer = cast(ObjClosure, self.pop())
                 self.pending_consumer = consumer
-                if self.debug_trace: print(f"--- Starting CALL-WITH-VALUES, producer: {producer.function.name} ---")
-                self.call(producer, 0) # 调用生产者
+                if self.debug_trace:
+                    print(
+                        f"--- Starting CALL-WITH-VALUES, producer: {producer.function.name} ---"
+                    )
+                self.call(producer, 0)  # 调用生产者
             elif instruction == OpCode.OP_VALUES:
                 value_count = self.read_byte(frame)
-                consumer = self.pending_consumer
+                consumer = cast(ObjClosure, self.pending_consumer)
                 if consumer is None:
-                    raise RuntimeError("`(values)` can only be used inside a producer for `call-with-values`")
+                    raise RuntimeError(
+                        "`(values)` can only be used inside a producer for `call-with-values`"
+                    )
                 self.pending_consumer = None
-                
-                if self.debug_trace: print(f"--- Producer returned {value_count} values, now calling consumer: {consumer.function.name} ---")
+
+                if self.debug_trace:
+                    print(
+                        f"--- Producer returned {value_count} values, now calling consumer: {consumer.function.name} ---"
+                    )
 
                 # 从生产者返回，并准备调用消费者
                 results = self.stack[-value_count:] if value_count > 0 else []
-                self.frames.pop() # 弹出生产者的帧
-                self.stack = self.stack[:frame.slots_start] # 清理生产者栈
+                self.frames.pop()  # 弹出生产者的帧
+                self.stack = self.stack[: frame.slots_start]  # 清理生产者栈
 
                 # 准备消费者调用
                 self.push(consumer)
                 self.stack.extend(results)
                 self.call(consumer, value_count)
 
-
-        if self.debug_trace: print("--- VM Trace End ---")
+        if self.debug_trace:
+            print("--- VM Trace End ---")
         return last_result
 
     def call(self, callee: ObjClosure, arg_count: int) -> None:
@@ -433,24 +463,37 @@ class VM:
             )
 
         if self.debug_trace:
-            print(f"\n--- Entering frame for {callee.function.name}/{callee.function.arity} ---")
+            print(
+                f"\n--- Entering frame for {callee.function.name}/{callee.function.arity} ---"
+            )
 
         frame = CallFrame(
             closure=callee, ip=0, slots_start=len(self.stack) - arg_count - 1
         )
         self.frames.append(frame)
 
-    def push(self, value: Value) -> None: self.stack.append(value)
-    def pop(self) -> Value: return self.stack.pop()
-    def peek(self, distance: int) -> Value: return self.stack[-1 - distance]
+    def push(self, value: Value) -> None:
+        self.stack.append(value)
+
+    def pop(self) -> Value:
+        return self.stack.pop()
+
+    def peek(self, distance: int) -> Value:
+        return self.stack[-1 - distance]
+
     def read_byte(self, frame: CallFrame) -> int:
         byte = frame.closure.function.chunk.code[frame.ip]
         frame.ip += 1
         return byte
+
     def read_constant(self, frame: CallFrame) -> Value:
         return self.current_chunk().constants[self.read_byte(frame)]
-    def current_frame(self) -> CallFrame: return self.frames[-1]
-    def current_chunk(self) -> Chunk: return self.current_frame().closure.function.chunk
+
+    def current_frame(self) -> CallFrame:
+        return self.frames[-1]
+
+    def current_chunk(self) -> Chunk:
+        return self.current_frame().closure.function.chunk
 
 
 # -----------------------------------------------------------------------------
@@ -467,8 +510,9 @@ def run_minischeme_mv(program_str: str, debug_trace: bool = False) -> None:
         for name, value in vm.globals.items():
             print(f"{name}: {value}")
     except (SyntaxError, NameError, TypeError, RuntimeError) as e:
-        print(f"\n--- An error occurred ---")
+        print("\n--- An error occurred ---")
         print(f"Error: {e}")
+
 
 # -----------------------------------------------------------------------------
 # 6. 运行示例代码 - 【已更新】

@@ -1,24 +1,27 @@
-use mini_scheme::{Compiler, VM, TraceConfig, Tracer, Expr};
+use mini_scheme::{Compiler, Expr, TraceConfig, Tracer, VM};
 
 fn main() {
     println!("=== MiniScheme Tracing System Demo ===\n");
 
     // Create a simple expression to compile and execute
-    let expr = Expr::Number(42.0);
+    let expr = Expr::Number(42.0, None);
 
     // Test compilation tracing
     println!("1. Testing Compilation Tracing:");
     let mut compiler = Compiler::new_script();
     let tracer = Tracer::new(TraceConfig::compilation_only());
     compiler.set_tracer(tracer);
-    
+
     match compiler.compile_expr(&expr) {
         Ok(_) => println!("   Compilation successful!"),
         Err(e) => println!("   Compilation error: {}", e),
     }
 
     let function = compiler.end_compiler();
-    println!("   Generated {} bytes of bytecode\n", function.chunk.code.len());
+    println!(
+        "   Generated {} bytes of bytecode\n",
+        function.chunk.code.len()
+    );
 
     // Test execution tracing
     println!("2. Testing Execution Tracing:");
@@ -36,17 +39,17 @@ fn main() {
     let mut combined_config = TraceConfig::all_enabled();
     combined_config.compact_format = true;
     combined_config.max_stack_depth = Some(5);
-    
+
     let combined_tracer = Tracer::new(combined_config);
-    
+
     let mut compiler2 = Compiler::new_script();
     compiler2.set_tracer(combined_tracer.clone());
-    
+
     let expr2 = Expr::Call(
-        Box::new(Expr::Variable("add".to_string())),
-        vec![Expr::Number(1.0), Expr::Number(2.0)]
+        Box::new(Expr::Variable("add".to_string(), None)),
+        vec![Expr::Number(1.0, None), Expr::Number(2.0, None)],
     );
-    
+
     match compiler2.compile_expr(&expr2) {
         Ok(_) => println!("   Complex expression compiled successfully!"),
         Err(e) => println!("   Compilation error: {}", e),
@@ -67,7 +70,13 @@ fn main() {
 fn format_value(value: &mini_scheme::Value) -> String {
     match value {
         mini_scheme::Value::Number(n) => n.to_string(),
-        mini_scheme::Value::Boolean(b) => if *b { "#t".to_string() } else { "#f".to_string() },
+        mini_scheme::Value::Boolean(b) => {
+            if *b {
+                "#t".to_string()
+            } else {
+                "#f".to_string()
+            }
+        }
         mini_scheme::Value::Nil => "nil".to_string(),
         _ => "<object>".to_string(),
     }
