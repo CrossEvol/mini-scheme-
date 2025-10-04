@@ -603,6 +603,15 @@ impl VM {
 
                 OpCode::OP_NEGATE => {
                     let value = self.pop()?;
+                    
+                    // Check for unspecified value first with clear error message
+                    if let Value::Unspecified = value {
+                        return Err(RuntimeError::TypeError {
+                            expected: "number".to_string(),
+                            got: "unspecified value".to_string(),
+                        });
+                    }
+                    
                     match value {
                         Value::Number(n) => self.push(Value::Number(-n))?,
                         _ => {
@@ -1031,6 +1040,15 @@ impl VM {
 
                 OpCode::OP_CAR => {
                     let value = self.pop()?;
+                    
+                    // Check for unspecified value first with clear error message
+                    if let Value::Unspecified = value {
+                        return Err(RuntimeError::TypeError {
+                            expected: "cons cell".to_string(),
+                            got: "unspecified value".to_string(),
+                        });
+                    }
+                    
                     match &value {
                         Value::Object(obj) => {
                             if let Ok(obj_ref) = obj.try_borrow() {
@@ -1058,6 +1076,15 @@ impl VM {
 
                 OpCode::OP_CDR => {
                     let value = self.pop()?;
+                    
+                    // Check for unspecified value first with clear error message
+                    if let Value::Unspecified = value {
+                        return Err(RuntimeError::TypeError {
+                            expected: "cons cell".to_string(),
+                            got: "unspecified value".to_string(),
+                        });
+                    }
+                    
                     match &value {
                         Value::Object(obj) => {
                             if let Ok(obj_ref) = obj.try_borrow() {
@@ -1381,6 +1408,20 @@ impl VM {
         let b = self.pop()?;
         let a = self.pop()?;
 
+        // Check for unspecified values first with clear error messages
+        if let Value::Unspecified = a {
+            return Err(RuntimeError::TypeError {
+                expected: "number".to_string(),
+                got: "unspecified value".to_string(),
+            });
+        }
+        if let Value::Unspecified = b {
+            return Err(RuntimeError::TypeError {
+                expected: "number".to_string(),
+                got: "unspecified value".to_string(),
+            });
+        }
+
         match (a, b) {
             (Value::Number(a_num), Value::Number(b_num)) => {
                 let result = op(a_num, b_num);
@@ -1402,6 +1443,20 @@ impl VM {
         let b = self.pop()?;
         let a = self.pop()?;
 
+        // Check for unspecified values first with clear error messages
+        if let Value::Unspecified = a {
+            return Err(RuntimeError::TypeError {
+                expected: "number".to_string(),
+                got: "unspecified value".to_string(),
+            });
+        }
+        if let Value::Unspecified = b {
+            return Err(RuntimeError::TypeError {
+                expected: "number".to_string(),
+                got: "unspecified value".to_string(),
+            });
+        }
+
         match (a, b) {
             (Value::Number(a_num), Value::Number(b_num)) => {
                 let result = op(a_num, b_num);
@@ -1419,6 +1474,20 @@ impl VM {
     fn binary_divide(&mut self) -> Result<(), RuntimeError> {
         let b = self.pop()?;
         let a = self.pop()?;
+
+        // Check for unspecified values first with clear error messages
+        if let Value::Unspecified = a {
+            return Err(RuntimeError::TypeError {
+                expected: "number".to_string(),
+                got: "unspecified value".to_string(),
+            });
+        }
+        if let Value::Unspecified = b {
+            return Err(RuntimeError::TypeError {
+                expected: "number".to_string(),
+                got: "unspecified value".to_string(),
+            });
+        }
 
         match (a, b) {
             (Value::Number(a_num), Value::Number(b_num)) => {
@@ -1668,6 +1737,14 @@ impl VM {
     /// Call a value with the given number of arguments
     fn call_value(&mut self, arg_count: usize) -> Result<(), RuntimeError> {
         let callee = self.peek(arg_count)?.clone();
+
+        // Check for unspecified value first with clear error message
+        if let Value::Unspecified = callee {
+            return Err(RuntimeError::TypeError {
+                expected: "callable".to_string(),
+                got: "unspecified value".to_string(),
+            });
+        }
 
         match &callee {
             Value::Object(obj) => {
