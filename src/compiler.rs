@@ -1272,14 +1272,9 @@ impl Compiler {
                     return Ok(());
                 }
                 "error" => {
-                    if args.len() != 2 {
-                        return Err(CompileError::ArityMismatch {
-                            expected: 2,
-                            got: args.len(),
-                        });
-                    }
                     // Push the built-in function onto the stack
-                    let builtin_value = crate::object::Value::builtin("error".to_string(), 2);
+                    let builtin_value =
+                        crate::object::Value::builtin("error".to_string(), args.len());
                     self.emit_constant(builtin_value)?;
                     // Compile the arguments (procedure name and message)
                     self.compile_expr(&args[0])?;
