@@ -1,3 +1,4 @@
+use crate::Token;
 use crate::bytecode::{Chunk, OpCode};
 use crate::object::{Closure, Function, Object, Value};
 use crate::trace::{ExecutionTrace, FrameInfo, TraceConfig, Tracer, UpvalueState};
@@ -9,7 +10,7 @@ use std::rc::Rc;
 /// Runtime error types for the virtual machine
 #[derive(Debug, Clone)]
 pub enum RuntimeError {
-    UndefinedVariable(String),
+    UndefinedVariable(String, Option<Token>),
     TypeError {
         expected: String,
         got: String,
@@ -47,7 +48,14 @@ pub enum RuntimeError {
 impl std::fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RuntimeError::UndefinedVariable(name) => write!(f, "Undefined variable: {}", name),
+            RuntimeError::UndefinedVariable(name, token) => {
+                let t = token.clone().unwrap();
+                write!(
+                    f,
+                    "Undefined variable: {} , in line : {} , column : {} ",
+                    name, t.line, t.column
+                )
+            }
             RuntimeError::TypeError { expected, got } => {
                 write!(f, "Type error: expected {}, got {}", expected, got)
             }
@@ -378,10 +386,16 @@ impl VM {
 
     /// Get a global variable
     pub fn get_global(&self, name: &str) -> Result<Value, RuntimeError> {
-        self.globals
-            .get(name)
-            .cloned()
-            .ok_or_else(|| RuntimeError::UndefinedVariable(name.to_string()))
+        self.globals.get(name).cloned().ok_or_else(|| {
+            RuntimeError::UndefinedVariable(
+                name.to_string(),
+                if self.frame_count > 0 {
+                    self.frames.last().unwrap().closure.function.token.clone()
+                } else {
+                    None
+                },
+            )
+        })
     }
 
     /// Set a global variable (must already exist)
@@ -390,7 +404,14 @@ impl VM {
             self.globals.insert(name.to_string(), value);
             Ok(())
         } else {
-            Err(RuntimeError::UndefinedVariable(name.to_string()))
+            Err(RuntimeError::UndefinedVariable(
+                name.to_string(),
+                if self.frame_count > 0 {
+                    self.frames.last().unwrap().closure.function.token.clone()
+                } else {
+                    None
+                },
+            ))
         }
     }
 
@@ -404,6 +425,7 @@ impl VM {
             arity: 0,
             chunk: chunk.clone(),
             upvalue_count: 0,
+            token: None,
         };
 
         // Create a closure for the main function
@@ -3685,11 +3707,11 @@ mod tests {
 
         // Try to get undefined global
         let result = vm.get_global("undefined");
-        assert!(matches!(result, Err(RuntimeError::UndefinedVariable(_))));
+        assert!(matches!(result, Err(RuntimeError::UndefinedVariable(..))));
 
         // Try to set undefined global
         let result = vm.set_global("undefined", Value::Nil);
-        assert!(matches!(result, Err(RuntimeError::UndefinedVariable(_))));
+        assert!(matches!(result, Err(RuntimeError::UndefinedVariable(..))));
     }
 
     #[test]
@@ -3863,6 +3885,7 @@ mod tests {
             arity: 0,
             chunk: function_chunk,
             upvalue_count: 0,
+            token: None,
         };
 
         // Add the function as a constant
@@ -3898,6 +3921,7 @@ mod tests {
             arity: 0,
             chunk: function_chunk,
             upvalue_count: 1,
+            token: None,
         };
 
         // Create a main function and closure to execute
@@ -3906,6 +3930,7 @@ mod tests {
             arity: 0,
             chunk: Chunk::new(),
             upvalue_count: 0,
+            token: None,
         };
 
         let main_closure = Closure::new(Rc::new(main_function));
@@ -3974,6 +3999,7 @@ mod tests {
             arity: 0,
             chunk: function_chunk,
             upvalue_count: 2,
+            token: None,
         };
 
         // Create a closure with two upvalues
@@ -4013,6 +4039,7 @@ mod tests {
             arity: 0,
             chunk: function_chunk,
             upvalue_count: 1,
+            token: None,
         };
 
         // Create a closure with one upvalue
@@ -4049,6 +4076,7 @@ mod tests {
             arity: 0,
             chunk: function_chunk,
             upvalue_count: 1,
+            token: None,
         };
 
         let mut closure = Closure::new(Rc::new(function));
@@ -4092,6 +4120,7 @@ mod tests {
             arity: 0,
             chunk: function_chunk,
             upvalue_count: 2,
+            token: None,
         };
 
         // Add function as constant
@@ -4140,6 +4169,7 @@ mod tests {
             arity: 0,
             chunk: inner_chunk,
             upvalue_count: 1,
+            token: None,
         };
 
         // Create closure for inner function
@@ -4159,6 +4189,7 @@ mod tests {
             arity: 0,
             chunk: Chunk::new(),
             upvalue_count: 0,
+            token: None,
         };
         let outer_closure = Closure::new(Rc::new(outer_function));
         vm.push_frame(Rc::new(outer_closure), 0).unwrap();

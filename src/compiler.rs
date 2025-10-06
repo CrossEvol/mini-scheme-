@@ -803,7 +803,8 @@ impl Compiler {
         temp_compiler.end_scope();
 
         // Finish compiling the function (this will emit OP_RETURN)
-        let compiled_function = temp_compiler.end_compiler();
+        let mut compiled_function = temp_compiler.end_compiler();
+        compiled_function.token = lambda.token.clone();
 
         // Create closure instruction in the current compiler
         let function_constant = self.add_constant(Value::function(compiled_function))?;

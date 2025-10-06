@@ -1,4 +1,5 @@
 use crate::bytecode::Chunk;
+use crate::{Token, token};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
@@ -51,6 +52,7 @@ pub struct Function {
     pub arity: usize,
     pub chunk: Chunk,
     pub upvalue_count: usize,
+    pub token: Option<Token>,
 }
 
 /// Closure object that captures upvalues from its environment
@@ -88,6 +90,7 @@ impl Function {
             arity,
             chunk: Chunk::new(),
             upvalue_count: 0,
+            token: None,
         }
     }
 
@@ -98,6 +101,7 @@ impl Function {
             arity,
             chunk,
             upvalue_count: 0,
+            token: None,
         }
     }
 
@@ -751,7 +755,7 @@ mod tests {
         assert_eq!(unspecified1, unspecified2);
         assert!(unspecified1.eq(&unspecified2));
         assert!(unspecified1.equal(&unspecified2));
-        
+
         // Test inequality with other types
         assert_ne!(unspecified1, Value::Nil);
         assert_ne!(unspecified1, Value::Number(0.0));
@@ -790,7 +794,13 @@ mod tests {
         assert_eq!(Value::symbol("test".to_string()).type_name(), "symbol");
         assert_eq!(Value::cons(Value::Nil, Value::Nil).type_name(), "pair");
         assert_eq!(Value::vector(vec![]).type_name(), "vector");
-        assert_eq!(Value::hashtable(std::collections::HashMap::new()).type_name(), "hashtable");
-        assert_eq!(Value::builtin("test".to_string(), 0).type_name(), "procedure");
+        assert_eq!(
+            Value::hashtable(std::collections::HashMap::new()).type_name(),
+            "hashtable"
+        );
+        assert_eq!(
+            Value::builtin("test".to_string(), 0).type_name(),
+            "procedure"
+        );
     }
 }
