@@ -777,7 +777,7 @@ pub fn format_ast_expr(expr: &Expr) -> String {
         Expr::Boolean(b, _) => format!("Boolean({})", if *b { "#t" } else { "#f" }),
         Expr::Variable(name, _) => format!("Variable(\"{}\")", name),
         Expr::Lambda(lambda) => format!("Lambda(params=[{}], body=...)", lambda.params.join(", ")),
-        Expr::Call(func, args) => {
+        Expr::Call(func, args, _) => {
             format!("Call(func={}, args={})", format_ast_expr(func), args.len())
         }
         Expr::Define(define) => format!("Define(name=\"{}\", value=...)", define.name),

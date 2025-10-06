@@ -48,6 +48,7 @@ fn main() {
     let expr2 = Expr::Call(
         Box::new(Expr::Variable("add".to_string(), None)),
         vec![Expr::Number(1.0, None), Expr::Number(2.0, None)],
+        None,
     );
 
     match compiler2.compile_expr(&expr2) {

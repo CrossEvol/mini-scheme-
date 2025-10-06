@@ -126,7 +126,7 @@ fn format_expr_pretty(expr: &Expr, indent: usize) -> String {
                 " ".repeat(indent)
             )
         }
-        Expr::Call(func, args) => {
+        Expr::Call(func, args, _) => {
             let mut result = format!(
                 "Call(\n{}func: {},",
                 " ".repeat(indent + 2),

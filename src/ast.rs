@@ -25,7 +25,7 @@ pub enum Expr {
     Set(Box<SetExpr>),
 
     // Function Application
-    Call(Box<Expr>, Vec<Expr>),
+    Call(Box<Expr>, Vec<Expr>, Option<Token>),
 
     // Quotation
     Quote(Box<Expr>, Option<Token>),
@@ -60,7 +60,7 @@ impl fmt::Debug for Expr {
             Expr::CallWithValues(cwv) => write!(f, "CallWithValues({:?})", cwv),
             Expr::Import(import) => write!(f, "Import({:?})", import),
             Expr::Set(set) => write!(f, "Set({:?})", set),
-            Expr::Call(func, args) => write!(f, "Call({:?}, {:?})", func, args),
+            Expr::Call(func, args, _) => write!(f, "Call({:?}, {:?})", func, args),
             Expr::Quote(expr, _) => write!(f, "Quote({:?})", expr),
             Expr::QuasiQuote(expr, _) => write!(f, "QuasiQuote({:?})", expr),
             Expr::UnQuote(expr, _) => write!(f, "UnQuote({:?})", expr),

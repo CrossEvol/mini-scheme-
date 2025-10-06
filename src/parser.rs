@@ -334,7 +334,7 @@ impl Parser {
                 self.advance();
 
                 // Treat as function call
-                Ok(Expr::Call(Box::new(first_expr), args))
+                Ok(Expr::Call(Box::new(first_expr), args, token))
             }
             Some(token_info) => Err(ParseError::UnexpectedToken {
                 expected: ")".to_string(),

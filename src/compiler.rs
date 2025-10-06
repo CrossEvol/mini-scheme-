@@ -1,3 +1,4 @@
+use crate::Token;
 use crate::ast::{
     BeginExpr, CallWithValuesExpr, DefineExpr, Expr, ImportExpr, LambdaExpr, LetExpr, LetLoopExpr,
     LetStarExpr, LetValuesExpr, SetExpr,
@@ -39,8 +40,15 @@ pub enum CompileError {
     VariableAlreadyDefined(String),
     JumpTooLarge,
     LoopTooLarge,
-    TypeError { expected: String, got: String },
-    ArityMismatch { expected: usize, got: usize },
+    TypeError {
+        expected: String,
+        got: String,
+    },
+    ArityMismatch {
+        expected: usize,
+        got: usize,
+        token: Option<Token>,
+    },
     InvalidOperation(String),
     NotImplemented(String),
 }
@@ -61,11 +69,18 @@ impl std::fmt::Display for CompileError {
             CompileError::TypeError { expected, got } => {
                 write!(f, "Type error: expected {}, got {}", expected, got)
             }
-            CompileError::ArityMismatch { expected, got } => {
+            CompileError::ArityMismatch {
+                expected,
+                got,
+                token,
+            } => {
                 write!(
                     f,
-                    "Arity mismatch: expected {} arguments, got {}",
-                    expected, got
+                    "Arity mismatch: expected {} arguments, got {}, occurred in line {}, column {}",
+                    expected,
+                    got,
+                    token.clone().unwrap().line,
+                    token.clone().unwrap().column
                 )
             }
             CompileError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
@@ -239,7 +254,7 @@ impl Compiler {
 
             // Function expressions
             Expr::Lambda(lambda) => self.compile_lambda(lambda),
-            Expr::Call(func, args) => self.compile_call(func, args),
+            Expr::Call(func, args, token) => self.compile_call(func, args, token.clone()),
 
             // Define expression
             Expr::Define(define) => self.compile_define(define),
@@ -801,7 +816,12 @@ impl Compiler {
     }
 
     /// Compile a function call
-    fn compile_call(&mut self, func_expr: &Expr, args: &[Expr]) -> Result<(), CompileError> {
+    fn compile_call(
+        &mut self,
+        func_expr: &Expr,
+        args: &[Expr],
+        token: Option<Token>,
+    ) -> Result<(), CompileError> {
         self.trace(&format!(
             "Compiling function call with {} arguments",
             args.len()
@@ -874,6 +894,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -916,6 +937,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: 0,
+                            token: token,
                         });
                     }
 
@@ -964,6 +986,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: 0,
+                            token: token,
                         });
                     }
 
@@ -991,6 +1014,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
 
@@ -1013,6 +1037,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
 
@@ -1032,6 +1057,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1043,6 +1069,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1054,6 +1081,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1065,6 +1093,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1076,6 +1105,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1087,6 +1117,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1098,6 +1129,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1110,6 +1142,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1122,6 +1155,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1138,6 +1172,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1154,6 +1189,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1171,6 +1207,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1183,6 +1220,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1194,6 +1232,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     self.compile_expr(&args[0])?;
@@ -1205,6 +1244,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack first
@@ -1221,6 +1261,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 0,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1252,6 +1293,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1269,6 +1311,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1286,6 +1329,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1303,6 +1347,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1320,6 +1365,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1337,6 +1383,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1353,6 +1400,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1370,6 +1418,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1387,6 +1436,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 3,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1405,6 +1455,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 1,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1421,6 +1472,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 2, // or 3 with default value
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1440,6 +1492,7 @@ impl Compiler {
                         return Err(CompileError::ArityMismatch {
                             expected: 3,
                             got: args.len(),
+                            token: token,
                         });
                     }
                     // Push the built-in function onto the stack
@@ -1498,6 +1551,7 @@ impl Compiler {
             return Err(CompileError::ArityMismatch {
                 expected: 2,
                 got: args.len(),
+                token: None,
             });
         }
 
@@ -2302,7 +2356,7 @@ impl Compiler {
             }
 
             // Handle function calls in quoted context (they become lists)
-            Expr::Call(func, args) => {
+            Expr::Call(func, args, _) => {
                 // In a quoted context, (f a b c) becomes a list (f a b c)
                 let mut elements = vec![*func.clone()];
                 elements.extend(args.clone());
@@ -2733,6 +2787,7 @@ mod tests {
         let call_expr = Expr::Call(
             Box::new(Expr::Variable("f".to_string(), None)),
             vec![Expr::Number(1.0, None), Expr::Number(2.0, None)],
+            None,
         );
 
         compiler.compile_expr(&call_expr).unwrap();
@@ -2915,6 +2970,7 @@ mod tests {
             body: vec![Expr::Call(
                 Box::new(Expr::Variable("values".to_string(), None)),
                 vec![Expr::Number(1.0, None), Expr::Number(2.0, None)],
+                None,
             )],
             docstring: None,
             token: None,
@@ -2928,6 +2984,7 @@ mod tests {
                     Expr::Variable("x".to_string(), None),
                     Expr::Variable("y".to_string(), None),
                 ],
+                None,
             )],
             docstring: None,
             token: None,
@@ -2981,6 +3038,7 @@ mod tests {
                             Expr::Variable("a".to_string(), None),
                             Expr::Number(5.0, None),
                         ],
+                        None,
                     ),
                 ),
             ],
@@ -2990,6 +3048,7 @@ mod tests {
                     Expr::Variable("a".to_string(), None),
                     Expr::Variable("b".to_string(), None),
                 ],
+                None,
             )],
             token: None,
         };
@@ -3013,7 +3072,7 @@ mod tests {
                         assert_eq!(inner_let.bindings.len(), 1);
                         assert_eq!(inner_let.bindings[0].0, "b");
                         // The value should be a call to +
-                        assert!(matches!(inner_let.bindings[0].1, Expr::Call(_, _)));
+                        assert!(matches!(inner_let.bindings[0].1, Expr::Call(_, _, _)));
                     }
                     _ => panic!("Expected inner let expression"),
                 }
