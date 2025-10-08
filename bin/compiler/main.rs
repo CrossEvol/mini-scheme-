@@ -103,7 +103,7 @@ fn compile_input(input: &str, trace_enabled: bool) {
     println!();
     
     let disassembler = Disassembler::new();
-    disassembler.disassemble_chunk(&function.chunk, "script");
+    disassembler.disassemble_chunk_with_functions(&function.chunk, "script");
 }
 
 fn compiler_repl() {

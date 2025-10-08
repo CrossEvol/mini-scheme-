@@ -612,6 +612,49 @@ impl Disassembler {
         }
     }
 
+    /// Disassemble a chunk and all nested functions within it
+    pub fn disassemble_chunk_with_functions(&self, chunk: &Chunk, name: &str) {
+        // First disassemble the main chunk
+        self.disassemble_chunk(chunk, name);
+        
+        // Then find and disassemble all nested functions
+        let functions = self.collect_functions_from_chunk(chunk);
+        for (func_name, function) in functions {
+            println!();
+            self.disassemble_chunk(&function.chunk, &func_name);
+        }
+    }
+
+    /// Collect all functions from a chunk's constants
+    fn collect_functions_from_chunk(&self, chunk: &Chunk) -> Vec<(String, crate::object::Function)> {
+        let mut functions = Vec::new();
+        
+        for constant in &chunk.constants {
+            if let Value::Object(obj) = constant {
+                if let Ok(obj_ref) = obj.try_borrow() {
+                    match &*obj_ref {
+                        crate::object::Object::Function(function) => {
+                            functions.push((function.name.clone(), function.clone()));
+                            // Recursively collect functions from this function's chunk
+                            let nested = self.collect_functions_from_chunk(&function.chunk);
+                            functions.extend(nested);
+                        }
+                        crate::object::Object::Closure(closure) => {
+                            let function = &*closure.function;
+                            functions.push((function.name.clone(), function.clone()));
+                            // Recursively collect functions from this function's chunk
+                            let nested = self.collect_functions_from_chunk(&function.chunk);
+                            functions.extend(nested);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        
+        functions
+    }
+
     /// Get a formatted string representation of an instruction
     pub fn instruction_to_string(&self, chunk: &Chunk, offset: usize) -> String {
         let instruction_byte = chunk.get_byte(offset).unwrap_or(0);
